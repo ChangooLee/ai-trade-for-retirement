@@ -1,0 +1,506 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LEADERS DESK — 주도주 눌림 데일리 트레이딩</title>
+<style>
+:root{--bg:#0b1020;--card:#141a24;--line:#232c3a;--mut:#8b97a7;--accent:#3b82f6;--up:#ef4444;--down:#3b82f6}
+*{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#0b1020,#0d1322);color:#e6e9ee;font:13.5px/1.55 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
+.wrap{max-width:1200px;margin:0 auto;padding:22px}
+h1{font-size:24px;margin:0;letter-spacing:.5px;background:linear-gradient(90deg,#60a5fa,#34d399);-webkit-background-clip:text;background-clip:text;color:transparent}
+.tag{color:var(--mut);font-size:12.5px;margin-top:2px}
+.badges{margin:8px 0}.badge{padding:3px 9px;border-radius:6px;font-size:11px;font-weight:700;margin-right:6px}
+.badge.g{background:#0c2f1d;color:#34d399}.badge.b{background:#13224a;color:#93c5fd}
+h2{font-size:16px;margin:24px 0 10px;display:flex;align-items:center;gap:8px}
+.banner{display:flex;gap:16px;align-items:center;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 18px;margin:12px 0}
+.mode{font-size:20px;font-weight:800;padding:6px 16px;border-radius:10px}
+.up-c{background:#0c2f1d;color:#34d399}.half-c{background:#2f2a0c;color:#fde68a}.down-c{background:#2f0c14;color:#fca5a5}
+.banner .k{font-size:11px;color:var(--mut)}.banner b{color:#e6e9ee;font-size:15px}
+.warn{background:#2f2a0c;color:#fde68a;border:1px solid #6b5e1f;border-radius:8px;padding:9px 13px;font-size:12.5px;margin:8px 0}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+.card.buy{border-left:4px solid #22c55e}.card.hold{border-left:4px solid #3b82f6}.card.sell{border-left:4px solid #ef4444}.card.imminent{border-left:4px solid #f59e0b}
+.hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}.hd b{font-size:15px}
+.mono{font-family:ui-monospace,Menlo,monospace;color:var(--mut);font-size:11px}
+.pill{margin-left:auto;padding:3px 10px;border-radius:7px;font-size:11.5px;font-weight:700}
+.pill.buy{background:#0c2f1d;color:#34d399}.pill.hold{background:#13224a;color:#93c5fd}.pill.sell{background:#2f0c14;color:#fca5a5}.pill.imm{background:#2f2a0c;color:#fde68a}
+.chips{margin:4px 0 8px}.chip{display:inline-block;padding:1px 7px;margin:1px;border-radius:20px;font-size:10.5px;background:#0c2f1d;color:#34d399}
+.meta{color:var(--mut);font-size:12px;margin:4px 0}
+canvas{width:100%;height:150px;display:block;background:#0c1424;border-radius:8px;margin:6px 0}
+.cl{font-size:10.5px;color:var(--mut);margin:2px 0}.cl b{margin:0 2px}
+.plan{display:grid;grid-template-columns:1fr 1fr;gap:4px 14px;margin:8px 0;font-size:12.5px;background:#0d1424;border-radius:8px;padding:9px 12px}
+.plan b{font-size:13.5px}.sub{color:var(--mut);font-size:10.5px}.pos{color:#34d399}.neg{color:#fca5a5}
+.form{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.form label{font-size:11px;color:var(--mut);display:block;margin-bottom:3px}
+.form input{background:#0c1424;border:1px solid var(--line);color:#e6e9ee;border-radius:8px;padding:8px 10px;font-size:13px}
+#searchWrap{position:relative}#search{width:230px}
+#sugg{position:absolute;top:62px;left:0;width:230px;max-height:240px;overflow:auto;background:#0c1424;border:1px solid var(--line);border-radius:8px;z-index:10;display:none}
+#sugg div{padding:7px 10px;cursor:pointer;font-size:12.5px;border-bottom:1px solid var(--line)}#sugg div:hover{background:#13224a}
+.btn{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:9px 16px;font-weight:700;cursor:pointer;font-size:13px}
+.btn.ghost{background:#1b2433;color:#cbd5e1}.btn.x{background:#3a1820;color:#fca5a5;padding:4px 9px;font-size:11px}
+table{width:100%;border-collapse:collapse;background:var(--card);border-radius:10px;overflow:hidden;font-size:12.5px;margin:6px 0}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}th{background:#1b2433;color:var(--mut);font-size:11px;white-space:nowrap}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}.empty{color:var(--mut);text-align:center;padding:20px}
+td:last-child,th:last-child{text-align:right}
+details{margin-top:6px}summary{cursor:pointer;color:#9cd6ff;font-size:12.5px}
+.kpis{display:flex;gap:18px;flex-wrap:wrap;margin:4px 0}.kpis span{font-size:11.5px;color:var(--mut)}.kpis b{color:#cfe3ff;font-size:16px;display:block}
+.steps{margin:4px 0;padding-left:18px}.steps li{margin:3px 0;font-size:12px;color:var(--mut)}.steps b{color:#e6e9ee}
+.foot{color:var(--mut);font-size:11px;margin-top:22px;border-top:1px solid var(--line);padding-top:12px}
+.summary-row{display:flex;gap:18px;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 16px;margin:8px 0}
+.summary-row div{font-size:11.5px;color:var(--mut)}.summary-row b{display:block;font-size:18px;color:#e6e9ee}
+@media(max-width:780px){.cards{grid-template-columns:1fr}}
+/* 종목 발굴 — 모멘텀 / TDA 컬럼 */
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+@media(max-width:860px){.cmp{grid-template-columns:1fr}}
+.cmp-col{background:#0f1622;border:1px solid var(--line);border-radius:14px;padding:12px 13px}
+.cmp-hd{font-size:14px;font-weight:800;padding:7px 11px;border-radius:8px;margin-bottom:4px}
+.cmp-hd.legacy{background:#13224a;color:#93c5fd}.cmp-hd.tda{background:#2a1340;color:#d8b4fe}
+.cmp-sub{font-size:12px;font-weight:700;margin:12px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--line)}
+.cmp-sub.buy{color:#34d399}.cmp-sub.sell{color:#fca5a5}
+.scard{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin:6px 0}
+.scard.b{border-left:3px solid #22c55e}.scard.s{border-left:3px solid #ef4444}
+.scard .nm{font-weight:700;font-size:13px}.scard .sub{margin-left:5px}
+.srow{display:flex;flex-wrap:wrap;gap:3px 14px;margin-top:5px;font-size:11.5px;color:var(--mut);font-variant-numeric:tabular-nums}
+.srow b{color:#e6e9ee;font-weight:700}
+.tdabar{height:5px;border-radius:3px;background:#1b2433;margin-top:6px;overflow:hidden}.tdabar i{display:block;height:100%}
+.scard canvas{height:84px;margin:6px 0 2px}
+.scard details{margin-top:5px}.scard summary{font-size:11px}
+.note{background:#101a2e;border:1px solid var(--line);border-left:3px solid #a855f7;border-radius:8px;padding:10px 13px;font-size:11.5px;color:var(--mut);margin:6px 0}
+.dxline{background:#0f1828;border:1px solid var(--line);border-radius:10px;padding:9px 14px;margin:8px 0;font-size:12.5px;color:#cbd5e1}
+.dxline b{color:#e6e9ee}.dxline .lab{color:var(--mut);font-weight:700;margin-right:6px}
+.dx{font-size:11.5px;color:#aeb9c7;margin:2px 0 8px;line-height:1.5}.dx b{color:#e6e9ee}
+</style></head><body><div class="wrap">
+
+<h1>📈 LEADERS DESK</h1>
+<div class="tag" id="tagline"></div>
+<div class="badges">
+  <span class="badge g">KRX 공식 데이터</span><span class="badge g">No Lookahead</span>
+  <span class="badge b">Paper Trading</span><span class="badge b">로컬 저장(브라우저)</span>
+</div>
+
+<div class="banner" id="banner"></div>
+<div class="dxline" id="regimeNote"></div>
+<div id="warns"></div>
+
+<h2>💼 내 보유 입력 <span class="sub" style="font-weight:400">(브라우저에만 저장됩니다)</span></h2>
+<div class="form">
+  <div id="searchWrap"><label>종목 검색</label><input id="search" placeholder="종목명 또는 코드" autocomplete="off"><div id="sugg"></div></div>
+  <div><label>매수가</label><input id="price" type="number" style="width:110px" placeholder="원"></div>
+  <div><label>수량</label><input id="shares" type="number" style="width:90px" placeholder="주"></div>
+  <div><label>매수일</label><input id="bdate" type="date" style="width:140px"></div>
+  <button class="btn" id="addBtn">+ 보유 추가</button>
+  <div style="margin-left:auto"><label>초기자본(원)</label><input id="capital" type="number" style="width:140px"></div>
+</div>
+<div id="holdInput"></div>
+
+<h2>📊 내 포트폴리오 <span class="sub" style="font-weight:400" id="pfSub"></span></h2>
+<div class="summary-row" id="pfSummary"></div>
+<div class="cards" id="holdCards"></div>
+
+<h2>🔴 매도 알림 <span class="sub" style="font-weight:400">(시간청산 40거래일 · TDA 위상 불안정)</span></h2>
+<div class="cards" id="sellCards"></div>
+
+<h2>🧭 종목 발굴</h2>
+<div class="cmp">
+  <div class="cmp-col">
+    <div class="cmp-hd legacy">📈 모멘텀·추세 방식 · 주도주 20주선 눌림</div>
+    <div class="dx" id="momDx"></div>
+    <div class="cmp-sub buy">🟢 매수 후보 — F리더 ∩ 20주선 눌림</div>
+    <div id="legacyBuy"></div>
+    <div class="cmp-sub sell">🔴 이탈 주의 — 20주선 하향 · 모멘텀 약화</div>
+    <div id="legacySell"></div>
+  </div>
+  <div class="cmp-col">
+    <div class="cmp-hd tda">🌀 TDA 방식 · 위상수학 시장국면 <span class="sub" id="tdaBadge" style="font-weight:400"></span></div>
+    <div class="dx" id="tdaDx"></div>
+    <div class="cmp-sub buy">🟢 매수 후보 — 위상 안정 + 추세</div>
+    <div id="tdaBuy"></div>
+    <div class="cmp-sub sell">🔴 매도 · 위험 — 위상 불안정 · 상승 전조</div>
+    <div id="tdaSell"></div>
+  </div>
+</div>
+
+<h2>🌙 오버나이트 단타 <span class="sub" style="font-weight:400">(당일 종가 매수 → 익일 시가 매도 · 1박)</span></h2>
+<div class="dxline"><span class="lab">데일리 루틴</span>이 화면은 매 거래일 <b>08:17경</b> 전일 종가 기준으로 갱신됩니다. ① <b>08:30~09:00</b> 어제 종가 매수분 <b>시가 매도 주문</b>(전량·가격 불문 — 전날 밤 예약주문도 가능, 화면은 확인용) → ② 낮 동안 워치리스트 숙지 → ③ <b>15:20</b> HTS로 당일 거래량·등락 3조건 재확인 → ④ 충족 종목만 <b>15:20~30 종가(동시호가) 매수</b></div>
+<div id="onWarn"></div>
+<div class="cmp">
+  <div class="cmp-col">
+    <div class="cmp-hd legacy">🌅 오늘 아침 매도 대상 <span class="sub" style="font-weight:400">(어제 신호 — 09:00 시가 전량 매도)</span></div>
+    <div id="onSignals"></div>
+  </div>
+  <div class="cmp-col">
+    <div class="cmp-hd tda">🕒 오늘 저녁 후보 워치리스트 <span class="sub" style="font-weight:400">(15:20 재확인 후 종가 매수)</span></div>
+    <div class="dx" id="onWatchDx"></div>
+    <div id="onWatch"></div>
+  </div>
+</div>
+<div class="note" id="onStats"></div>
+
+<h2>🔬 전략 & 백데이터 검증</h2>
+<div class="cards" id="strategyCards"></div>
+
+<div class="foot" id="foot"></div>
+</div>
+
+<script>
+const DATA = __DATA__;
+const LSH = "leaders_holdings_v1", LSC = "leaders_capital_v1";
+let holdings = [];
+try { holdings = JSON.parse(localStorage.getItem(LSH) || "[]"); } catch(e){}
+let capital = +(localStorage.getItem(LSC) || DATA.initial_capital);
+const W = v => v==null||isNaN(v) ? "—" : "₩"+Math.round(v).toLocaleString();
+const P = (v,d=1) => v==null||isNaN(v) ? "—" : (v>=0?"+":"")+(v*100).toFixed(d)+"%";
+const esc = s => (s+"").replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+function save(){ localStorage.setItem(LSH, JSON.stringify(holdings)); localStorage.setItem(LSC, capital); }
+const ALL = DATA.all_stocks || {};   // 코드 -> [이름, 종가, 시장] (전 상장종목)
+const BROAD = DATA.broad || {};      // 유니버스 밖 + 분석(지표·TDA 스칼라, 차트 없음)
+function meta(tk){   // stocks(풀+차트) → broad(분석·차트없음) → all_stocks(가격만)
+  const s = DATA.stocks[tk];
+  if(s) return {name:s.name, market:s.market, sector:s.sector, cur:s.close, analyzed:true, chart:true,
+                tda:s.tda, swing20:s.swing20, high52:s.high52, dist_wma20:s.dist_wma20, rs:s.rs, leader:s.leader, pullback:s.pullback, wma20:s.wma20};
+  const b = BROAD[tk];
+  if(b) return {name:b.name, market:b.market, sector:b.sector, cur:b.close, analyzed:true, chart:!!(b.daily&&b.daily.length),
+                tda:b.tda, swing20:b.swing20, high52:b.high52, dist_wma20:b.dist_wma20, rs:b.rs, leader:b.leader, pullback:b.pullback, wma20:b.wma20};
+  const a = ALL[tk];
+  if(a) return {name:a[0], market:a[2], sector:"", cur:a[1], analyzed:false, chart:false};
+  return {name:tk, market:"", sector:"", cur:null, analyzed:false, chart:false};
+}
+function tdaSellSig(t){ return !!(t && (t.risk_pct>=0.75 || (t.rising && t.risk_pct>=0.6))); }
+function dartBadge(tk){ const d=(DATA.dart||{})[tk]; if(!d) return "";
+  if(d.crit&&d.crit.length) return `<div class="srow"><b class="neg">🚫 위험공시 — 매수 금지 권고: ${esc(d.crit[0])}${d.crit.length>1?' 외 '+(d.crit.length-1)+'건':''}</b></div>`;
+  if(d.warn&&d.warn.length) return `<div class="srow"><b style="color:#fbbf24">⚠ 공시 주의(희석·수급): ${esc(d.warn[0])}${d.warn.length>1?' 외 '+(d.warn.length-1)+'건':''}</b></div>`;
+  return ""; }
+
+// ---- 거래일 계산 ----
+const CAL = DATA.calendar;
+function holdingDays(entry){ return CAL.filter(d => d>entry && d<=DATA.meta.asof).length; }
+function plannedExit(entry){
+  const fut = CAL.filter(d => d>=entry); const i = CAL.indexOf(fut[0]);
+  if(i>=0 && i+DATA.hold_days<CAL.length) return CAL[i+DATA.hold_days];
+  // 캘린더(과거 거래일) 범위 밖 → 주말 제외 영업일 가산으로 추정 (공휴일 미반영 ≈)
+  const need = i>=0 ? i+DATA.hold_days-(CAL.length-1) : DATA.hold_days;
+  const d = new Date((CAL[CAL.length-1]||entry)+"T00:00:00"); let n=0;
+  while(n<need){ d.setDate(d.getDate()+1); const w=d.getDay(); if(w!==0&&w!==6) n++; }
+  return "≈"+d.toISOString().slice(0,10);
+}
+// ---- 회계 ----
+function compute(){
+  const open = holdings.map(h=>{ const m=meta(h.ticker); const cur=m.cur;
+    const value=cur*h.shares, cost=h.entry_price*h.shares, days=holdingDays(h.entry_date), rem=Math.max(0,DATA.hold_days-days);
+    const tdaSell=tdaSellSig(m.tda);
+    let status="정상";
+    if(!cur) status="가격없음"; else if(!m.analyzed) status="유니버스외";
+    else if(days>=DATA.hold_days) status="매도예정"; else if(tdaSell) status="TDA매도";
+    else if(m.swing20 && cur<m.swing20) status="검토"; else if(rem<=5) status="임박";
+    return {...h, name:m.name, market:m.market, sector:m.sector, analyzed:m.analyzed, chart:m.chart, tda:m.tda, swing20:m.swing20,
+            cur, value, cost, days, rem, status, tdaSell, ret: cost? cur/h.entry_price-1:NaN, planned:plannedExit(h.entry_date)}; });
+  const hv=open.reduce((a,h)=>a+(h.value||0),0), ic=open.reduce((a,h)=>a+(h.cost||0),0);
+  const cash=capital-ic, total=cash+hv; open.forEach(h=>h.weight=total>0?h.value/total:0);
+  return {open, total, cash, hv, ic};
+}
+// ---- 차트 (캔들 + MA + 거래량) ----
+function ma(arr,p){const o=[];for(let i=0;i<arr.length;i++){if(i<p-1){o.push(null);continue;}let s=0;for(let j=i-p+1;j<=i;j++)s+=arr[j];o.push(s/p);}return o;}
+function drawChart(cv, daily){
+  const W0=cv.clientWidth, H0=cv.clientHeight||150;
+  if(!daily||daily.length<5||!W0){return;}
+  const dpr=window.devicePixelRatio||1; cv.width=W0*dpr; cv.height=H0*dpr;
+  const ctx=cv.getContext("2d"); ctx.scale(dpr,dpr); ctx.clearRect(0,0,W0,H0);
+  const n=daily.length, ph=H0*0.72, vh=H0-ph-4, pl=4, pr=4, pw=W0-pl-pr;
+  const hi=Math.max(...daily.map(d=>d[1])), lo=Math.min(...daily.map(d=>d[2])), rg=(hi-lo)||1;
+  const vmax=Math.max(...daily.map(d=>d[4]))||1, slot=pw/n, bw=Math.max(1,slot*0.6);
+  const X=i=>pl+slot*(i+0.5), Y=v=>ph-(v-lo)/rg*ph, VY=v=>H0-(v/vmax)*vh;
+  const closes=daily.map(d=>d[3]);
+  daily.forEach((d,i)=>{const x=X(i),up=d[3]>=d[0],col=up?"#ef4444":"#3b82f6";
+    ctx.strokeStyle=col;ctx.beginPath();ctx.moveTo(x,Y(d[1]));ctx.lineTo(x,Y(d[2]));ctx.stroke();
+    ctx.fillStyle=col;const y1=Y(d[0]),y2=Y(d[3]);ctx.fillRect(x-bw/2,Math.min(y1,y2),bw,Math.max(Math.abs(y1-y2),1));
+    ctx.globalAlpha=.4;ctx.fillRect(x-bw/2,VY(d[4]),bw,H0-VY(d[4]));ctx.globalAlpha=1;});
+  [[5,"#22c55e"],[20,"#f59e0b"],[60,"#a855f7"]].forEach(([p,c])=>{const m=ma(closes,p);ctx.strokeStyle=c;ctx.lineWidth=1.1;ctx.beginPath();let st=false;
+    m.forEach((v,i)=>{if(v==null)return;if(!st){ctx.moveTo(X(i),Y(v));st=true;}else ctx.lineTo(X(i),Y(v));});ctx.stroke();});
+}
+function chartBlock(tk){return `<div class="cl">일봉 · MA<b style="color:#22c55e">5</b><b style="color:#f59e0b">20</b><b style="color:#a855f7">60</b> · 거래량</div><canvas data-tk="${tk}"></canvas>`;}
+
+// ---- 알고리즘 참고 레벨: 목표가=52주 전고점 회복(눌림 전략의 기본 시나리오), 손절가=스윙로우(최근 20일 저점).
+// 검증상 가격 강제청산은 시간청산보다 성과가 나빠 미강제 — 둘 다 '참고' 레벨이며 청산 규칙은 40거래일.
+function levelRows(tk,cur){
+  const s=meta(tk);
+  const hi=s.high52>0? cur/s.high52 : null;                           // 52주 전고점 ≈ 현재가/52주고점비율
+  const stop=s.swing20!=null? s.swing20 : (s.wma20||null);
+  const stopLab=s.swing20!=null? "스윙로우(20일 저점)" : "20주선";
+  let rows="";
+  if(hi&&cur){ const up=hi/cur-1;
+    rows+= up>0.02
+      ? `<div>목표가(참고) <b class="pos">${W(hi)}</b> <span class="sub">52주 전고점 회복 (+${(up*100).toFixed(1)}%)</span></div>`
+      : `<div>목표가(참고) <b class="pos">신고가권</b> <span class="sub">전고점 ${W(hi)} — 시간청산까지 추세보유</span></div>`;
+  } else rows+=`<div>목표가(참고) <b>—</b></div>`;
+  if(stop&&cur){ const w=s.wma20;
+    rows+=`<div>손절가(참고) <b class="neg">${W(stop)}</b> <span class="sub">${stopLab} ${((stop/cur-1)*100).toFixed(1)}%${s.swing20!=null&&w?` · 20주선 ${W(w)}${cur<w?' ⚠이탈':''}`:''}</span></div>`;
+  } else rows+=`<div>손절가(참고) <b>—</b></div>`;
+  return rows;
+}
+function paintCharts(){document.querySelectorAll("canvas[data-tk]").forEach(cv=>{const s=DATA.stocks[cv.dataset.tk]||(DATA.broad&&DATA.broad[cv.dataset.tk]);drawChart(cv,s&&s.daily);});}
+
+// ---- 렌더 ----
+function chips(s){const c=[`RS ${Math.round(s.rs)}`,`52주고점 ${Math.round(s.high52*100)}%`,"정배열",`20주선 ${P(s.dist_wma20,0)}`,`거래대금 ${Math.round(s.atv20/1e8)}억`];return c.map(x=>`<span class="chip">✓ ${x}</span>`).join(" ");}
+function miniChart(tk){return `<canvas data-tk="${tk}"></canvas>`;}
+function qtyFor(s,pw,total){const sh=Math.max(0,Math.floor(pw*total/s.close));return {sh,amt:sh*s.close};}
+// 모멘텀·추세 방식 매수 카드 (F리더 ∩ 20주선 눌림)
+function legacyBuyCard(tk,pw,total){
+  const s=DATA.stocks[tk]; if(!s) return '';
+  const {sh,amt}=qtyFor(s,pw,total), hi=s.high52>0? s.close/s.high52:null;
+  return `<div class="scard b"><div><span class="nm">${esc(s.name)}</span> <span class="mono">${tk}·${s.market}·${s.sector}</span></div>
+    ${miniChart(tk)}${dartBadge(tk)}
+    <div class="srow"><span>RS <b>${Math.round(s.rs)}</b></span><span>52주고점 <b>${Math.round(s.high52*100)}%</b></span><span>20주선 <b>${P(s.dist_wma20,0)}</b></span></div>
+    <div class="srow"><span>매수가 <b>${W(s.close)}</b></span><span>추천 <b>${sh.toLocaleString()}주</b> ≈${W(amt)}</span></div>
+    <div class="srow"><span>목표 <b class="pos">${hi?W(hi):'—'}</b></span><span>손절 <b class="neg">${W(s.swing20)}</b></span><span>청산 <b>+40일</b></span></div></div>`;
+}
+// 모멘텀·추세 방식 이탈 카드 (20주선 하향)
+function legacySellCard(tk){
+  const s=DATA.stocks[tk]; if(!s) return '';
+  const below=s.wma20? s.close/s.wma20-1:null;
+  return `<div class="scard s"><div><span class="nm">${esc(s.name)}</span> <span class="mono">${tk}·${s.market}·${s.sector}</span></div>
+    ${miniChart(tk)}
+    <div class="srow"><span>현재가 <b>${W(s.close)}</b></span><span>20주선 <b>${W(s.wma20)}</b> <b class="neg">${below!=null?P(below,1):''}</b></span></div>
+    <div class="srow"><span class="neg">추세선 하향 · 모멘텀 약화 — 신규진입 회피 / 보유 시 청산 검토</span></div></div>`;
+}
+// TDA 매수 카드 (위상 안정 + 추세)
+function tdaBuyCard(tk,pw,total){
+  const s=DATA.stocks[tk], t=s&&s.tda; if(!t) return '';
+  const {sh,amt}=qtyFor(s,pw,total), safe=Math.round((1-t.risk_pct)*100);
+  return `<div class="scard b"><div><span class="nm">${esc(s.name)}</span> <span class="mono">${tk}·${s.market}·${s.sector}</span></div>
+    ${miniChart(tk)}${dartBadge(tk)}
+    <div class="srow"><span>위상리스크 <b>${t.risk>=0?'+':''}${t.risk}</b> (안전 상위 ${safe}%)</span><span>추세 <b class="${t.dir>=0?'pos':'neg'}">${t.dir>=0?'+':''}${t.dir}</b></span></div>
+    <div class="srow"><span>종합 <b>${t.score>=0?'+':''}${t.score}</b></span><span>풍경노름 <b>${t.pl_norm}</b></span><span>엔트로피 <b>${t.entropy}</b></span></div>
+    <div class="srow"><span>매수가 <b>${W(s.close)}</b></span><span>추천 <b>${sh.toLocaleString()}주</b> ≈${W(amt)}</span></div>
+    <div class="tdabar"><i style="width:${Math.max(6,safe)}%;background:#22c55e"></i></div></div>`;
+}
+// TDA 매도/위험 카드 (위상 불안정 · 전조)
+function tdaSellCard(tk){
+  const s=DATA.stocks[tk], t=s&&s.tda; if(!t) return '';
+  const risk=Math.round(t.risk_pct*100);
+  return `<div class="scard s"><div><span class="nm">${esc(s.name)}</span> <span class="mono">${tk}·${s.market}·${s.sector}</span></div>
+    ${miniChart(tk)}
+    <div class="srow"><span>위상리스크 <b class="neg">${t.risk>=0?'+':''}${t.risk}</b> (상위 ${risk}% 위험)</span><span>추세 <b class="${t.dir>=0?'pos':'neg'}">${t.dir>=0?'+':''}${t.dir}</b></span></div>
+    <div class="srow"><span>${t.rising?'<b class="neg">노름 상승(전조)</b>':'높은 노름'}</span><span>엔트로피 <b>${t.entropy}</b></span><span>격동 <b>${t.turb!=null?t.turb:'—'}</b></span></div>
+    <div class="tdabar"><i style="width:${Math.max(6,risk)}%;background:#ef4444"></i></div></div>`;
+}
+function legacyEmpty(m){
+  const nL=Object.values(DATA.stocks).filter(s=>s.leader).length, nP=Object.values(DATA.stocks).filter(s=>s.pullback).length;
+  return `<div class="empty">매수 후보 <b>없음</b> — 정상.<br>F리더 <b>${nL}</b> ∩ 20주선 눌림 <b>${nP}</b> 교집합이 비었습니다. 리더가 20주선까지 눌릴 때만 진입(추격매수 회피).${m<.95?`<br>시장 디리스킹(${esc(DATA.exposure.mode)} ${Math.round(m*100)}%).`:''}</div>`;
+}
+// ===== 매일 변동 문구 (규칙 기반 · 분석결과로 선택 · 날짜로 표현 회전 → 같은 국면에도 같은 문장 반복 방지. LLM 미사용) =====
+function daySeed(){ const s=(DATA.meta.asof||"").replace(/[^0-9]/g,""); let h=0; for(const ch of s) h=(h*31+(+ch))%9973; return h; }
+function pick(arr,off){ return arr[(daySeed()+(off||0))%arr.length]; }
+function regimeNote(){
+  const e=DATA.exposure, m=e.target_exposure;
+  const both=e.kospi_above_40w&&e.kosdaq_above_40w, none=!e.kospi_above_40w&&!e.kosdaq_above_40w;
+  const breadth=both?"코스피·코스닥 모두 40주선 위":none?"코스피·코스닥 모두 40주선 아래":(e.kospi_above_40w?"코스피만 40주선 위(코스닥 약세)":"코스닥만 40주선 위(코스피 약세)");
+  const vmax=Math.max(e.kospi_vol_percentile||0,e.kosdaq_vol_percentile||0);
+  const vol=vmax>=.8?pick(["변동성 분위 최상단까지 확대","변동성이 상위 구간으로 급등"],1):vmax>=.5?pick(["변동성은 중간 수준","변동성 다소 상승"],1):pick(["변동성은 낮은 편","변동성 안정"],1);
+  const reg=m>=.95?pick(["추세·변동성 모두 우호적 — 적극 편입 국면.","리스크-온 — 목표노출 최대 구간."]):m>=.6?pick(["추세는 유효하나 변동성 상승 — 부분 노출.","현금 일부 확보하며 선별 편입 국면."]):pick(["방어적 국면 — 신규 진입 신중, 현금 비중 확대.","리스크-오프 — 노출 축소, 추격 매수 자제."]);
+  return `<span class="lab">오늘의 국면</span><b>${esc(e.mode)} ${Math.round(m*100)}%</b> · ${breadth} · ${vol}. ${reg}`;
+}
+function momNote(){
+  const st=Object.values(DATA.stocks), nL=st.filter(s=>s.leader).length;
+  const nB=(DATA.buy_order||[]).length, nS=(DATA.legacy_sell||[]).length;
+  let s;
+  if(nB>0) s=pick([`주도주 ${nL}개 중 <b>${nB}개가 20주선 눌림</b> — 진입 후보 포착.`,`눌림 진입 신호 <b>${nB}건</b> — 리더 ${nL}개 중 선별.`],2);
+  else if(nL>0) s=pick([`주도주 <b>${nL}개</b>가 모두 추세 위(미눌림) — 진입 대기.`,`리더 ${nL}개는 강세 지속, 눌림 자리 없음 — 관망.`],2);
+  else s=pick(["리더 조건 충족 종목 없음 — 관망 국면.","현재 주도주 부재 — 신규 진입 보류."],2);
+  return s+(nS?` 20주선 이탈 ${nS}개 주의.`:"");
+}
+function tdaDxNote(){
+  const arr=Object.values(DATA.stocks).map(s=>s.tda).filter(Boolean);
+  if(!arr.length) return "위상 데이터 부족.";
+  const rising=arr.filter(t=>t.rising).length, share=Math.round(rising/arr.length*100);
+  const hi=arr.filter(t=>t.risk_pct>=.75).length, nB=(DATA.tda_buy||[]).length, nS=(DATA.tda_sell||[]).length;
+  const mood=share>=50?pick(["위상 노름 상승 종목이 <b>과반</b> — 시장 전반 불안정 누적.","상승 전조가 광범위 — 경계 국면."],3):share>=25?pick(["일부 종목서 위상 불안정 누적 중.","상승 전조가 부분적으로 관찰."],3):pick(["시장 전반 위상은 <b>안정적</b>.","큰 격동 없이 안정 국면."],3);
+  return `${mood} 안정+추세 매수 ${nB}개 · 불안정 경고 ${nS}개(위험 상위군 ${hi} · 노름 상승 ${rising}).`;
+}
+function render(){
+  const e=DATA.exposure, m=e.target_exposure;
+  const mc=m>=.95?"up-c":m>=.6?"half-c":"down-c";
+  const fresh = DATA.meta.system_date && DATA.meta.system_date!==DATA.meta.asof ? ` (시스템 ${DATA.meta.system_date} · 최신 거래일 EOD)` : "";
+  document.getElementById("tagline").textContent=`${DATA.meta.strategy} · 데이터 기준 ${DATA.meta.asof}${fresh} · 집행 ${DATA.meta.next_day} 시가 · 거래대금상위 ${DATA.meta.universe_count}종목`;
+  const pf=compute();
+  // 배너
+  const slots=Math.min(DATA.sizing.max_positions,Math.ceil(m/DATA.sizing.base_slot_weight)), pw=slots?m/slots:0;
+  document.getElementById("banner").innerHTML=`<div class="mode ${mc}">${e.mode}</div>
+    <div><div class="k">목표 총노출(D4)</div><b>${Math.round(m*100)}%</b></div>
+    <div><div class="k">KOSPI 40주선</div><b>${e.kospi_above_40w?"위 ▲":"아래 ▼"}</b></div>
+    <div><div class="k">KOSDAQ 40주선</div><b>${e.kosdaq_above_40w?"위 ▲":"아래 ▼"}</b></div>
+    <div><div class="k">변동성분위 K/Q</div><b>${Math.round(e.kospi_vol_percentile*100)}/${Math.round(e.kosdaq_vol_percentile*100)}</b></div>
+    <div><div class="k">목표 종목</div><b>${slots}×${(pw*100).toFixed(1)}%</b></div>`;
+  document.getElementById("regimeNote").innerHTML=regimeNote();
+  // 경고
+  let warns="";
+  if(m<.95) warns+=`<div class="warn">⚠ 시장 디리스킹: 변동성이 높아 목표노출 ${Math.round(m*100)}%. 매수 신호가 있어도 현금 ${Math.round((1-m)*100)}% 유지.</div>`;
+  const secCount={}; [...pf.open.map(h=>h.ticker), ...DATA.buy_order].forEach(tk=>{const s=DATA.stocks[tk]; if(s){secCount[s.sector]=(secCount[s.sector]||0)+1;}});
+  const np=pf.open.length+DATA.buy_order.length; const top=Object.entries(secCount).sort((a,b)=>b[1]-a[1])[0];
+  if(top && top[0]!=="기타(미분류)" && np && top[1]/np>=0.4) warns+=`<div class="warn">⚠ 섹터 쏠림: <b>${top[0]} ${Math.round(top[1]/np*100)}%</b> (${top[1]}/${np}종목) — 분산 검토.</div>`;
+  document.getElementById("warns").innerHTML=warns;
+  // 포트폴리오 요약
+  document.getElementById("pfSub").textContent=`${pf.open.length}종목 보유`;
+  document.getElementById("pfSummary").innerHTML=`<div>총자산<b>${W(pf.total)}</b></div><div>현금<b>${W(pf.cash)} (${pf.total?Math.round(pf.cash/pf.total*100):100}%)</b></div>
+    <div>투자<b>${W(pf.hv)} (${pf.total?Math.round(pf.hv/pf.total*100):0}%)</b></div><div>평가손익<b class="${pf.hv-pf.ic>=0?'pos':'neg'}">${W(pf.hv-pf.ic)}</b></div>`;
+  // 보유 카드 + 매도 알림
+  const hc=[], sc=[];
+  pf.open.forEach(h=>{
+    if(!h.analyzed){   // 유니버스 외 — 가격·손익만 추적
+      hc.push(`<div class="card hold"><div class="hd"><b>${esc(h.name||h.ticker)}</b> <span class="mono">${h.ticker}·${h.market||''}</span>
+        <span class="pill hold">유니버스 외 · ${(h.weight*100).toFixed(1)}%</span>
+        <button class="btn x" onclick="del('${h.ticker}','${h.entry_date}')">삭제</button></div>
+        <div class="meta">진입 ${h.entry_date} @ ${W(h.entry_price)} × ${h.shares}주</div>
+        <div class="plan">
+          <div>매입액 <b>${W(h.cost)}</b> <span class="sub">${W(h.entry_price)}×${h.shares}주</span></div>
+          <div>평가금액 <b>${W(h.value)}</b> <span class="sub">현재가×수량</span></div>
+          <div>평가손익 <b class="${h.ret>=0?'pos':'neg'}">${W(h.value-h.cost)} (${P(h.ret)})</b></div>
+          <div>현재가 <b>${W(h.cur)}</b> <span class="sub">/ 진입 ${W(h.entry_price)}</span></div></div>
+        <div class="meta" style="color:#fbbf24">⚠ 거래대금 ${DATA.meta.universe_count}위 밖 — 가격·손익만 추적(차트·목표/손절·TDA 신호 미제공)</div></div>`);
+      return;
+    }
+    const isSell = h.status==="매도예정" || h.status==="TDA매도";
+    const cls = isSell?"sell":h.status==="임박"?"imminent":"hold";
+    const pill = isSell?"sell":h.status==="임박"?"imm":"hold";
+    const reason = h.status==="매도예정" ? `<div class="srow"><b class="neg">✅ 40거래일 시간청산 도달 — 다음 거래일 시가 매도</b></div>`
+      : h.status==="TDA매도" ? `<div class="srow"><b class="neg">🔴 TDA 매도 신호 — 위상 불안정(위험 상위 ${Math.round(h.tda.risk_pct*100)}%${h.tda.rising?" · 노름 상승":""})</b></div>` : "";
+    const tdaLine = h.tda ? `<div>TDA 위상리스크 <b class="${h.tdaSell?'neg':''}">${h.tda.risk>=0?'+':''}${h.tda.risk}</b> <span class="sub">상위 ${Math.round(h.tda.risk_pct*100)}% 위험${h.tda.rising?' · 노름↑':''}</span></div>` : "";
+    const card=`<div class="card ${cls}">
+      <div class="hd"><b>${esc(h.name||h.ticker)}</b> <span class="mono">${h.ticker}·${h.market||''}·${h.sector||''}</span>
+        <span class="pill ${pill}">${h.status} · ${(h.weight*100).toFixed(1)}%</span>
+        <button class="btn x" onclick="del('${h.ticker}','${h.entry_date}')">삭제</button></div>
+      <div class="meta">진입 ${h.entry_date} @ ${W(h.entry_price)} × ${h.shares}주 · ${h.days}거래일 보유 / 남은 ${h.rem}일</div>
+      ${reason}${h.chart?chartBlock(h.ticker):'<div class="meta" style="color:#8b97a7">차트 미제공(거래대금 상위 300 외) · 지표·TDA 신호는 분석됨</div>'}
+      <div class="plan">
+        <div>매입액 <b>${W(h.cost)}</b> <span class="sub">${W(h.entry_price)}×${h.shares}주</span></div>
+        <div>평가금액 <b>${W(h.value)}</b> <span class="sub">현재가×수량</span></div>
+        <div>평가손익 <b class="${h.ret>=0?'pos':'neg'}">${W(h.value-h.cost)} (${P(h.ret)})</b></div>
+        <div>현재가 <b>${W(h.cur)}</b> <span class="sub">/ 진입 ${W(h.entry_price)}</span></div>
+        <div>청산예정 <b>${h.planned}</b> <span class="sub">(8주·D-${h.rem})</span></div>
+        ${tdaLine}${levelRows(h.ticker,h.cur)}</div></div>`;
+    if(isSell) sc.push(card); else hc.push(card);
+  });
+  document.getElementById("holdCards").innerHTML=hc.length?hc.join(""):'<div class="empty">보유 종목 없음. 위에서 검색해 추가하세요.</div>';
+  document.getElementById("sellCards").innerHTML=sc.length?sc.join(""):'<div class="empty">오늘 청산 대상 없음.</div>';
+  // 종목 발굴 — 모멘텀 / TDA
+  const held=new Set(pf.open.map(h=>h.ticker));
+  const lb=DATA.buy_order.filter(tk=>!held.has(tk));
+  document.getElementById("legacyBuy").innerHTML = lb.length ? lb.map(tk=>legacyBuyCard(tk,pw,pf.total)).join("") : legacyEmpty(m);
+  const ls=(DATA.legacy_sell||[]).filter(tk=>DATA.stocks[tk]);
+  document.getElementById("legacySell").innerHTML = ls.length ? ls.map(legacySellCard).join("") : '<div class="empty">20주선 하향 이탈 종목 없음.</div>';
+  const tb=(DATA.tda_buy||[]).filter(tk=>!held.has(tk)&&DATA.stocks[tk]);
+  document.getElementById("tdaBuy").innerHTML = tb.length ? tb.map(tk=>tdaBuyCard(tk,pw,pf.total)).join("") : '<div class="empty">위상 안정+추세 매수 후보 없음.</div>';
+  const ts=(DATA.tda_sell||[]).filter(tk=>DATA.stocks[tk]);
+  document.getElementById("tdaSell").innerHTML = ts.length ? ts.map(tdaSellCard).join("") : '<div class="empty">위상 불안정 경고 종목 없음.</div>';
+  const tm=DATA.tda_meta||{};
+  document.getElementById("tdaBadge").textContent = tm.has_ripser ? `(H1 지속성 · 윈도 ${tm.window}일 · ${tm.n}종목)` : `(H0 강등 모드)`;
+  document.getElementById("momDx").innerHTML = momNote();
+  document.getElementById("tdaDx").innerHTML = tdaDxNote();
+  // 오버나이트 단타
+  const ON=DATA.overnight||{}, ost=ON.stats||{};
+  const onName=tk=>{const s=DATA.stocks[tk]||((DATA.broad||{})[tk]);return s?s.name:((DATA.all_stocks||{})[tk]||[tk])[0];};
+  {
+    const offN=ost.off_mean!=null?(ost.off_mean-0.0035)*100:null, nonN=ost.non_mean!=null?(ost.non_mean-0.0035)*100:null;
+    document.getElementById("onWarn").innerHTML = (offN==null)?"":(e.mode==="Risk-Off"
+      ? `<div class="note" style="border-left-color:#34d399">✅ 현재 <b>Risk-Off(고변동)</b> 국면 — 백테스트상 이 전략이 <b>유일하게 비용 차감 후 양(+)</b>이었던 국면입니다(평균 ${offN>=0?'+':''}${offN.toFixed(2)}%/박 · net 승률 ${(ost.off_win*100).toFixed(0)}%). 급락 공포 밤의 갭 반등(유동성 공급 보상)이 원천 — 단 연도별 편차가 크고(2025 음) 개별 밤 하방 꼬리(−3%대)는 그대로입니다.</div>`
+      : `<div class="warn">⚠ 현재 <b>${esc(e.mode)}</b> 국면 — 백테스트상 이 국면의 밤은 비용 차감 후 평균 <b>${nonN>=0?'+':''}${nonN.toFixed(2)}%/박${nonN<0?' 손실':' (사실상 본전)'}</b>·net 승률 ${(ost.non_win*100).toFixed(0)}%로 엣지가 없었습니다. 진입 자제 권장 — 이 전략의 수익은 역사적으로 Risk-Off(고변동) 국면에 집중됐습니다.</div>`);
+  }
+  const onSig=(ON.signals||[]);
+  document.getElementById("onSignals").innerHTML = onSig.length ? onSig.map(s=>{
+    const tgtM=s.close*(1+(ost.mean||0)), tgtMed=s.close*(1+(ost.median||0)), dn=s.close*(1+(ost.p05||0));
+    return `<div class="scard b"><div><span class="nm">${esc(s.name)}</span> <span class="mono">${s.ticker}</span>
+      <span class="sub">어제 +${(s.ret1*100).toFixed(1)}% · 거래량 ×${s.vr}</span></div>
+      ${miniChart(s.ticker)}${dartBadge(s.ticker)}
+      <div class="srow"><span>매수 기준(어제 종가) <b>${W(s.close)}</b></span><span><b class="neg">오늘 09:00 시가 전량 매도(가격 불문)</b></span></div>
+      <div class="srow"><span>기대 매도가 <b class="pos">${W(tgtM)}</b> <span class="sub">(평균 +${((ost.mean||0)*100).toFixed(2)}%)</span></span>
+        <span>중앙 <b>${W(tgtMed)}</b></span><span>하방5% <b class="neg">${W(dn)}</b></span></div></div>`;}).join("")
+    : '<div class="empty">어제 발화한 신호 없음.</div>';
+  const onW=(ON.watch||[]);
+  document.getElementById("onWatchDx").innerHTML = `전일 거래량 2배 이상 + 양봉 종목. 과거 이 워치리스트의 <b>다음날 신호 발화율 ~9%</b>(기저율의 5배). <b>오늘 15:20에 ①당일 거래량 ≥ 20일평균×3 ②등락 +3%~+28% ③상한가 잠김 아님</b>을 확인된 종목만 종가(동시호가) 매수 — 미충족이면 매수하지 않습니다. <b>재점화 후보</b>(아침 매도 대상과 동일 종목)도 조건 재충족 시 재매수 가능 — 검증상 재점화 신호도 동일 엣지(1박 평균 +0.55%, N=1,102).`;
+  document.getElementById("onWatch").innerHTML = onW.length ? onW.map(s=>{
+    const mt=meta(s.ticker), t=mt.tda;
+    const hi=mt.high52>0&&mt.cur? (mt.cur/mt.high52) : null;
+    const info=[`거래량 ×${s.vr}`, `거래대금 ${s.tv}억`];
+    if(hi) info.push(`52주고점가 ${W(hi)}`);
+    if(t) info.push(`TDA위상 ${t.risk>=0?'+':''}${t.risk}${t.rising?'↑':''}`);
+    return `<div class="scard s" style="border-left-color:#a855f7"><div><span class="nm">${esc(s.name)}</span> <span class="mono">${s.ticker}·${mt.market||''}${mt.sector?('·'+mt.sector):''}</span>
+      ${s.resig?'<span class="pill imm">재점화 후보 · 아침 매도분 재매수 가능</span>':''}</div>
+      ${miniChart(s.ticker)}${dartBadge(s.ticker)}
+      <div class="srow"><span>어제 <b class="${s.ret1>=0?'pos':'neg'}">+${(s.ret1*100).toFixed(1)}%</b> 종가 <b>${W(s.close)}</b></span>${info.map(x=>`<span>${x}</span>`).join("")}</div>
+      <div class="srow"><span>매수 <b>오늘 15:20 3조건 충족 시 종가</b></span><span>매도 <b>내일 09:00 시가 전량(가격 불문)</b></span></div>
+      <div class="srow"><span>기대 매도가 <b class="pos">매수가 +${((ost.mean||0)*100).toFixed(2)}%</b></span><span>중앙 +${((ost.median||0)*100).toFixed(2)}%</span><span>하방5% <b class="neg">${((ost.p05||0)*100).toFixed(1)}%</b></span></div></div>`;}).join("")
+    : '<div class="empty">워치리스트 없음.</div>';
+  document.getElementById("onStats").innerHTML = ost.n ? `📊 <b>실측 통계</b> (${ost.from}~, 신호 ${ost.n.toLocaleString()}건, 매 빌드 원데이터 재계산): 1박 평균 <b>${(ost.mean*100).toFixed(2)}%</b> · 중앙 ${(ost.median*100).toFixed(2)}% · 승률 ${(ost.win*100).toFixed(0)}% · 5%분위 <b class="neg">${(ost.p05*100).toFixed(1)}%</b> · 95%분위 +${(ost.p95*100).toFixed(1)}%. 왕복 비용 0.35% 차감 시 평균 <b>${((ost.mean-0.0035)*100).toFixed(2)}%/박</b> — <b>중앙값은 비용 미달</b>(절반의 거래는 손실, 평균은 소수 급등이 견인).${ost.off_mean!=null?` <b>국면별</b>: Risk-Off 밤 net ${((ost.off_mean-0.0035)*100).toFixed(2)}% vs 그 외 국면 net ${((ost.non_mean-0.0035)*100).toFixed(2)}% — 수익이 고변동 국면에 집중.`:''} <b>총자산의 30% 이하</b>로만 운용 권장(전액 복리 시 변동성 끌림으로 MDD −67% 이력).` : "";
+  // 전략/검증
+  const b=DATA.backtest;
+  document.getElementById("strategyCards").innerHTML=`
+    <div class="card"><h3 style="margin:0 0 6px">📈 모멘텀·추세 방식 — 발굴 로직</h3><ol class="steps">
+      <li><b>유니버스 기준</b> ${esc(DATA.meta.universe_rule||('거래대금 상위 '+DATA.meta.universe_count))} (현재 ${DATA.meta.universe_count}종목). 이 풀에서만 후보·신호를 계산하며, <b>관리 지정 종목은 순위 밖이어도 풀 분석에 포함</b>합니다. 그 외 보유 종목은 가격·손익만 추적.</li>
+      <li><b>시장국면(D4)</b> KOSPI·KOSDAQ 지수의 40주선 상회 여부 + 주간 변동성 분위로 목표 총노출 100/70/40%를 시장별 min()으로 결정</li>
+      <li><b>리더 F</b> 6–1개월 모멘텀 백분위 ≥85, 52주 고점 대비 ≥80%, 일봉 50&gt;150&gt;200 정배열, 200일선 상승</li>
+      <li><b>진입</b> 리더가 20주선까지 눌린 자리 — 그 주 저가 ≤ 20주선×1.05 & 그 주 종가 &gt; 20주선</li>
+      <li><b>비중</b> 목표노출 ÷ 슬롯 수</li>
+      <li><b>청산</b> 진입 40거래일 시간청산 <b>또는</b> 보유 중 TDA 위상 불안정 발생(둘 중 먼저) — 강제 손절 미사용, 스윙로우=20일 저점은 참고</li>
+      <li><b>이탈 스크린</b> 종가 &lt; 20주선 & 6–1개월 모멘텀 음수 → 회피·청산 검토</li></ol></div>
+    <div class="card"><h3 style="margin:0 0 6px">🌀 TDA 방식 — 발굴 로직</h3><ol class="steps">
+      <li><b>임베딩</b> 종목별 최근 ${(DATA.tda_meta||{}).window||60}거래일 로그수익률을 Takens 시간지연 임베딩(차원 ${(DATA.tda_meta||{}).embed_dim||3}·지연 1)으로 위상공간 점구름화</li>
+      <li><b>지속성 호몰로지</b> 점구름에 Vietoris–Rips 복합체 → 1차원 호몰로지(H1·루프) 지속성 다이어그램 산출</li>
+      <li><b>위상 특징</b> ① 지속성 풍경 L2 노름 ② 지속성 엔트로피 ③ 5거래일 전과의 Wasserstein 거리 ④ 노름 상승분</li>
+      <li><b>위상리스크</b> 위 특징을 횡단면 z-score로 표준화·결합(노름0.5·엔트로피0.25·격동0.25 + 상승분 가중) — 높을수록 불안정</li>
+      <li><b>방향</b> 6–1개월 모멘텀 + 종가/50일선 추세를 z-score 결합</li>
+      <li><b>매수</b> 추세&gt;0 & 위상리스크&lt;중앙값, 종합점수(방향−0.7·리스크) 상위 / <b>매도</b> 위상리스크 상위 25%(노름 높음·상승=전조)</li></ol></div>
+    <div class="card"><h3 style="margin:0 0 6px">🔬 백데이터 검증 — 모멘텀·추세 전략</h3>
+      ${b.pit?`<div class="warn" style="margin:4px 0">⚠ <b>생존편향 제거(PIT) 재검증 결과</b> — 상장폐지 종목까지 포함한 시점별 데이터(2,819종목)로 재검증한 결과, 이 전략의 절대수익 주장은 철회합니다.</div>
+      <div class="kpis"><span>PIT CAGR<b class="neg">${(b.pit.cagr*100).toFixed(1)}%</b></span><span>PIT MDD<b class="neg">${Math.round(b.pit.mdd*100)}%</b></span><span>승률<b>${Math.round(b.pit.win*100)}%</b></span><span>同기간 KOSPI<b class="pos">+${Math.round(b.pit.kospi*100)}%</b></span></div>
+      <div class="meta">원인: <b>'거래대금 상위' 유니버스 자체가 ${Math.round(b.pit.pool*100)}% 드리프트</b>(투기 테마주 풀 — 생존 데이터에선 승자만 남아 안 보였음). 전략 선별은 풀 대비 <b>+${Math.round(b.pit.vs_pool*100)}%p 우위</b>로 스킬은 실재하나 풀의 하락을 못 이김. <b>시가총액 기반 유니버스로 재설계 검증 중.</b> 연도별(PIT): ${b.pit.yearly.map(y=>y[0]+" "+(y[1]>=0?"+":"")+Math.round(y[1]*100)+"%").join(" · ")}</div>
+      <div class="meta">참고 — 생존 패널(부풀려진 수치): Sharpe ${b.sharpe} · MDD ${Math.round(b.mdd*100)}% · 승률 ${Math.round(b.win_rate*100)}% — 현재 상장 종목만으로 계산되어 신뢰 불가.</div>`:
+      `<div class="kpis"><span>Sharpe<b>${b.sharpe}</b></span><span>MDD<b class="neg">${Math.round(b.mdd*100)}%</b></span><span>Calmar<b>${b.calmar}</b></span><span>승률<b>${Math.round(b.win_rate*100)}%</b></span></div>`}
+      <ol class="steps" style="margin-top:8px">
+      <li><b>룩어헤드 차단</b> 신호는 기준일 종가로 계산하고 집행은 다음 거래일 시가로 가정 / 주봉 신호는 그 주 마감 후에만 확정</li>
+      <li><b>거래비용</b> 왕복 0.35% 차감(0.5·0.7·1.0% 스트레스 시나리오도 점검)</li>
+      <li><b>PIT 검증</b> 공식 API로 2016~ 전 거래일 전종목(상폐 포함) 백필, 분할/감자 기준가 보정(pykrx 수정주가와 0.0bp 일치 확인), 상폐 전손 처리</li>
+      <li><b>D4 재검증</b> 시장별 변동성 타게팅 노출을 per-market min()으로 재검증</li>
+      <li><b>설계 근거</b> 캔들패턴·돌파·VCP는 일반화 검증서 초과수익 없어 제외 / 강제 손절은 시간청산 대비 성과 악화로 미사용</li></ol>
+      <div class="meta" style="margin-top:6px">※ TDA는 방향이 아닌 리스크/청산 신호. 모든 표시 신호는 검증 재정립까지 참고용 — 실매매 진입 근거로 사용하지 말 것.</div></div>`;
+  paintCharts();
+}
+window.addEventListener("resize",()=>setTimeout(paintCharts,100));
+
+// ---- 입력 ----
+function renderHoldInput(){
+  const el=document.getElementById("holdInput");
+  if(!holdings.length){el.innerHTML='';return;}
+  el.innerHTML='<table><thead><tr><th>종목</th><th>매수일</th><th class="num">매수가</th><th class="num">수량</th><th></th></tr></thead><tbody>'+
+    holdings.map(h=>{const mt=meta(h.ticker);const ext=DATA.stocks[h.ticker]?'':' <span style="color:#fbbf24">·유니버스 외</span>';return `<tr><td><b>${esc(mt.name||h.ticker)}</b> <span class="mono">${h.ticker}</span>${ext}</td><td>${h.entry_date}</td><td class="num">${W(h.entry_price)}</td><td class="num">${h.shares}주</td><td><button class="btn x" onclick="del('${h.ticker}','${h.entry_date}')">삭제</button></td></tr>`;}).join("")+'</tbody></table>';
+}
+window.del=function(tk,date){holdings=holdings.filter(h=>!(h.ticker===tk&&h.entry_date===date));save();renderHoldInput();render();};
+function addHolding(){
+  const tk=document.getElementById("search").dataset.ticker;
+  const price=+document.getElementById("price").value, shares=+document.getElementById("shares").value;
+  const date=document.getElementById("bdate").value||DATA.meta.asof;
+  if(!tk||!(DATA.stocks[tk]||ALL[tk])){alert("종목을 검색해서 선택하세요.");return;}
+  if(!(price>0)||!(shares>0)){alert("매수가와 수량을 입력하세요.");return;}
+  holdings.push({ticker:tk,entry_date:date,entry_price:price,shares:shares});save();
+  document.getElementById("search").value="";document.getElementById("search").dataset.ticker="";
+  document.getElementById("price").value="";document.getElementById("shares").value="";
+  renderHoldInput();render();
+}
+// 검색 자동완성 (전 상장종목 — 유니버스 밖도 검색·추가 가능)
+const SRC = Object.keys(ALL).length ? ALL
+  : Object.fromEntries(Object.entries(DATA.stocks).map(([k,v])=>[k,[v.name,v.close,v.market]]));
+const allTk=Object.keys(SRC);
+const searchEl=document.getElementById("search"), suggEl=document.getElementById("sugg");
+searchEl.addEventListener("input",()=>{const q=searchEl.value.trim().toLowerCase();searchEl.dataset.ticker="";
+  if(!q){suggEl.style.display="none";return;}
+  const hits=allTk.filter(tk=>tk.includes(q)||SRC[tk][0].toLowerCase().includes(q)).slice(0,12);
+  suggEl.innerHTML=hits.map(tk=>{const a=SRC[tk],ext=DATA.stocks[tk]?'':' <span style="color:#fbbf24">·외</span>';
+    return `<div data-tk="${tk}">${esc(a[0])} <span class="mono">${tk}·${a[2]}</span>${ext}</div>`;}).join("");
+  suggEl.style.display=hits.length?"block":"none";});
+suggEl.addEventListener("click",e=>{const d=e.target.closest("div[data-tk]");if(!d)return;const tk=d.dataset.tk;
+  searchEl.value=SRC[tk][0]+" ("+tk+")";searchEl.dataset.ticker=tk;suggEl.style.display="none";
+  if(!document.getElementById("price").value)document.getElementById("price").value=SRC[tk][1];});
+document.addEventListener("click",e=>{if(!e.target.closest("#searchWrap"))suggEl.style.display="none";});
+document.getElementById("addBtn").addEventListener("click",addHolding);
+document.getElementById("capital").value=capital;
+document.getElementById("capital").addEventListener("change",e=>{capital=+e.target.value||DATA.initial_capital;save();render();});
+document.getElementById("bdate").value=DATA.meta.asof;
+document.getElementById("foot").innerHTML=`데이터: KRX 공식 API 종가(EOD), 매 거래일 갱신. 신호는 기준일 종가로 계산하고 집행은 다음 거래일 시가를 가정합니다. 보유·자본은 이 브라우저에만 저장됩니다.<br>검증 한계: 현재 상장 종목 기준이라 생존편향이 있고, 2018–19형 약세 레짐에선 부진할 수 있으며, 개별 종목의 수익을 보장하지 않습니다. 생성 ${DATA.meta.generated}`;
+renderHoldInput();render();
+</script></body></html>

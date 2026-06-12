@@ -1,0 +1,10 @@
+pandas==2.3.3
+numpy==2.4.6
+pyarrow==24.0.0
+PyYAML==6.0.3
+requests==2.34.2
+pykrx==1.2.8
+# TDA(위상수학) 신호 — Vietoris-Rips H1 지속성
+ripser>=0.6.15
+persim>=0.3.8
+pytest>=8.0

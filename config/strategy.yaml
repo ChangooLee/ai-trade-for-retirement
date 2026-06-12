@@ -1,0 +1,86 @@
+strategy:
+  name: "F_LEADER_20W_PULLBACK_40D_D4"
+  asof_mode: "last_trading_day"
+  execution: "next_open"
+
+paths:
+  daily_ohlcv: "data/cache/daily_ohlcv.parquet"
+  index_ohlcv: "data/cache/index_ohlcv.parquet"
+  positions: "data/cache/positions.parquet"
+
+universe:
+  markets: ["KOSPI", "KOSDAQ"]
+  top_n_by_trdval20: 300   # 검색·분석 커버리지 확대(유진테크 등 거래대금 180~300위 포함)
+  min_listing_days: 252
+  min_close: 1000
+  exclude_spac: true        # 스팩은 이름 정규식("스팩")으로 제외 (코드 반영됨)
+  exclude_preferred: true   # 우선주는 이름 정규식("우$|우B")으로 제외 (코드 반영됨)
+  # ※ exclude_managed(관리종목 제외)는 현재 미구현. KRX 관리종목 플래그 필터 필요 시 별도 구현.
+  # 관리 지정 종목: 거래대금 순위 밖이어도 항상 데이터·지표·TDA·차트까지 풀 분석에 강제 포함.
+  managed_tickers: []       # 예: ["084370", "001200"] — 코드 6자리 문자열(순위 밖이어도 풀 분석)
+  exclude_halted: true
+
+leader:
+  rs_threshold: 85
+  momentum_lookback_days: 126
+  momentum_skip_days: 21
+  high_52w_threshold: 0.80
+  require_ma_alignment: true
+  require_ma200_up: true
+
+pullback:
+  weekly_ma: 20
+  low_band: 1.05
+  require_weekly_close_above_ma: true
+
+holding:
+  max_holding_days: 40
+  forced_stop: false
+  swing_low_review: true
+  swing_low_days: 20
+
+exposure:
+  method: "D4_VOL_TARGET"
+  vol_window_weeks: 20            # 주봉 해상도(검증 일관성). 일봉전환은 daily index 확보 후.
+  vol_percentile_window_weeks: 156
+  ma_weeks: 40
+  risk_on_percentile: 0.60
+  half_percentile: 0.80
+  risk_on_exposure: 1.00
+  half_exposure: 0.70
+  risk_off_exposure: 0.40
+  combine_market_exposure: "min"   # 보수적: 두 시장 중 더 위험한 쪽
+  force_reduce_existing_positions: false
+
+sizing:
+  max_positions: 15
+  base_slot_weight: 0.05
+  weight_method: "target_exposure_div_target_slots"
+
+portfolio:
+  initial_capital: 100000000      # 페이퍼트레이딩 초기 자본(원). 실제 비중·추천수량 계산 기준
+
+cost:
+  assumed_round_trip_cost: 0.0035
+  stress_costs: [0.0035, 0.005, 0.007, 0.01]
+
+sector_concentration:
+  warn_threshold: 0.40
+
+render:
+  theme: "dark"
+  max_width_px: 1180
+  chart_mode: "inline_svg"
+  weekly_chart_weeks: 80
+  daily_chart_days: 120
+
+# TDA(위상수학적 데이터 분석) 종목 발굴 — 연구개발계획서 방법론 (Gidea-Katz 2018 등)
+# 신호 부호: 지속성 노름↑/상승 = 위상 불안정 = 매도, 낮고 안정 = 매수 적격. 방향은 모멘텀 보강.
+tda:
+  window: 60          # Takens 임베딩 슬라이딩 윈도(거래일). 논문 50~60
+  embed_dim: 3        # 임베딩 차원 m (논문 3~5; 루프 H1 검출엔 3이면 충분)
+  delay: 1            # 시간지연 τ
+  change_lag: 5       # 위상 변화(Wasserstein)·노름상승 비교 시점차(거래일)
+  risk_lambda: 0.7    # score = dir - λ·risk
+  n_buy: 8            # TDA 매수 후보 표시 수
+  n_sell: 8           # TDA 매도/위험 후보 표시 수
