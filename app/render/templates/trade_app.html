@@ -93,6 +93,7 @@ details{margin-top:6px}summary{cursor:pointer;color:#9cd6ff;font-size:12.5px}
 
 <h2>📊 내 포트폴리오 <span class="sub" style="font-weight:400" id="pfSub"></span></h2>
 <div class="summary-row" id="pfSummary"></div>
+<div id="cbBanner"></div>
 <div class="cards" id="holdCards"></div>
 
 <h2>🔴 매도 알림 <span class="sub" style="font-weight:400">(시간청산 40거래일 · TDA 위상 불안정)</span></h2>
@@ -150,6 +151,18 @@ const W = v => v==null||isNaN(v) ? "—" : "₩"+Math.round(v).toLocaleString();
 const P = (v,d=1) => v==null||isNaN(v) ? "—" : (v>=0?"+":"")+(v*100).toFixed(d)+"%";
 const esc = s => (s+"").replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 function save(){ localStorage.setItem(LSH, JSON.stringify(holdings)); localStorage.setItem(LSC, capital); }
+// ---- 서킷브레이커(월 손실 한도 −3%, 결정 0004 / PIT 검증: 최악월 −14.5%→−6.3%, MDD −27→−25%) ----
+const LSE = "leaders_eqhist_v1", CB_LIMIT = 0.03;
+function eqHist(){ try{ return JSON.parse(localStorage.getItem(LSE)||"{}"); }catch(e){ return {}; } }
+function cbStatus(total){   // 데이터 기준일의 '월'을 키로, 월초 자산 대비 당월 손익(MTD) 계산
+  const key=(DATA.meta.asof||"").slice(0,7);
+  if(!key || !(total>0)) return {key, base:null, mtd:null, tripped:false, active:false};
+  const h=eqHist();
+  if(h[key]==null) h[key] = (h._last!=null ? h._last : total);  // 새 달 → 전월 마지막 자산을 월초 기준으로 승계
+  h._last=total; localStorage.setItem(LSE, JSON.stringify(h));
+  const base=h[key], mtd = base>0 ? total/base-1 : 0;
+  return {key, base, mtd, tripped: mtd <= -CB_LIMIT, active:true};
+}
 const ALL = DATA.all_stocks || {};   // 코드 -> [이름, 종가, 시장] (전 상장종목)
 const BROAD = DATA.broad || {};      // 유니버스 밖 + 분석(지표·TDA 스칼라, 차트 없음)
 function meta(tk){   // stocks(풀+차트) → broad(분석·차트없음) → all_stocks(가격만)
@@ -320,6 +333,13 @@ function render(){
   const fresh = DATA.meta.system_date && DATA.meta.system_date!==DATA.meta.asof ? ` (시스템 ${DATA.meta.system_date} · 최신 거래일 EOD)` : "";
   document.getElementById("tagline").textContent=`${DATA.meta.strategy} · 데이터 기준 ${DATA.meta.asof}${fresh} · 집행 ${DATA.meta.next_day} 시가 · 거래대금상위 ${DATA.meta.universe_count}종목`;
   const pf=compute();
+  // 서킷브레이커 (월 손실 한도 −3%)
+  const cb=cbStatus(pf.total); window.CB_TRIP=cb.tripped;
+  document.getElementById("cbBanner").innerHTML = !cb.active
+    ? `<div class="note">🛡 <b>서킷브레이커</b> 대기 — 보유·자본을 입력하면 월초 자산 대비 당월 손익을 추적해 <b>−${(CB_LIMIT*100).toFixed(0)}%</b> 도달 시 당월 신규 매수를 중단합니다(결정 0004·PIT 검증).</div>`
+    : cb.tripped
+      ? `<div class="warn" style="border-left-color:#ef4444;background:#2a1416"><b class="neg">🛑 월 손실 한도 도달</b> — 당월 손익 <b class="neg">${P(cb.mtd)}</b> (월초 ${W(cb.base)} → 현재 ${W(pf.total)}). <b>당월 신규 매수 중단</b>(보유분은 시간청산·TDA 규칙 유지). ${cb.key} 종료 후 자동 해제. <span class="sub">PIT 검증: 이 규칙으로 최악월 −14.5%→−6.3%, MDD −27→−25%.</span></div>`
+      : `<div class="note" style="border-left-color:#34d399">🛡 <b>서킷브레이커 정상</b> — 당월 손익 <b class="${cb.mtd>=0?'pos':'neg'}">${P(cb.mtd)}</b> (월초 ${W(cb.base)} 기준). 한도 <b>−${(CB_LIMIT*100).toFixed(0)}%</b>까지 여유 <b>${P(cb.mtd+CB_LIMIT)}</b> → 신규 매수 가능.</div>`;
   // 배너
   const slots=Math.min(DATA.sizing.max_positions,Math.ceil(m/DATA.sizing.base_slot_weight)), pw=slots?m/slots:0;
   document.getElementById("banner").innerHTML=`<div class="mode ${mc}">${e.mode}</div>
@@ -381,12 +401,13 @@ function render(){
   document.getElementById("sellCards").innerHTML=sc.length?sc.join(""):'<div class="empty">오늘 청산 대상 없음.</div>';
   // 종목 발굴 — 모멘텀 / TDA
   const held=new Set(pf.open.map(h=>h.ticker));
+  const cbStop = cb.tripped ? `<div class="warn" style="border-left-color:#ef4444">🛑 월 손실 한도 −${(CB_LIMIT*100).toFixed(0)}% 도달 — <b>당월 신규 매수 중단</b>. 아래는 참고용이며 집행하지 마세요.</div>` : "";
   const lb=DATA.buy_order.filter(tk=>!held.has(tk));
-  document.getElementById("legacyBuy").innerHTML = lb.length ? lb.map(tk=>legacyBuyCard(tk,pw,pf.total)).join("") : legacyEmpty(m);
+  document.getElementById("legacyBuy").innerHTML = cbStop + (lb.length ? lb.map(tk=>legacyBuyCard(tk,pw,pf.total)).join("") : legacyEmpty(m));
   const ls=(DATA.legacy_sell||[]).filter(tk=>DATA.stocks[tk]);
   document.getElementById("legacySell").innerHTML = ls.length ? ls.map(legacySellCard).join("") : '<div class="empty">20주선 하향 이탈 종목 없음.</div>';
   const tb=(DATA.tda_buy||[]).filter(tk=>!held.has(tk)&&DATA.stocks[tk]);
-  document.getElementById("tdaBuy").innerHTML = tb.length ? tb.map(tk=>tdaBuyCard(tk,pw,pf.total)).join("") : '<div class="empty">위상 안정+추세 매수 후보 없음.</div>';
+  document.getElementById("tdaBuy").innerHTML = cbStop + (tb.length ? tb.map(tk=>tdaBuyCard(tk,pw,pf.total)).join("") : '<div class="empty">위상 안정+추세 매수 후보 없음.</div>');
   const ts=(DATA.tda_sell||[]).filter(tk=>DATA.stocks[tk]);
   document.getElementById("tdaSell").innerHTML = ts.length ? ts.map(tdaSellCard).join("") : '<div class="empty">위상 불안정 경고 종목 없음.</div>';
   const tm=DATA.tda_meta||{};
@@ -414,7 +435,7 @@ function render(){
     : '<div class="empty">어제 발화한 신호 없음.</div>';
   const onW=(ON.watch||[]);
   document.getElementById("onWatchDx").innerHTML = `전일 거래량 2배 이상 + 양봉 종목. 과거 이 워치리스트의 <b>다음날 신호 발화율 ~9%</b>(기저율의 5배). <b>오늘 15:20에 ①당일 거래량 ≥ 20일평균×3 ②등락 +3%~+28% ③상한가 잠김 아님</b>을 확인된 종목만 종가(동시호가) 매수 — 미충족이면 매수하지 않습니다. <b>재점화 후보</b>(아침 매도 대상과 동일 종목)도 조건 재충족 시 재매수 가능 — 검증상 재점화 신호도 동일 엣지(1박 평균 +0.55%, N=1,102).`;
-  document.getElementById("onWatch").innerHTML = onW.length ? onW.map(s=>{
+  document.getElementById("onWatch").innerHTML = cbStop + (onW.length ? onW.map(s=>{
     const mt=meta(s.ticker), t=mt.tda;
     const hi=mt.high52>0&&mt.cur? (mt.cur/mt.high52) : null;
     const info=[`거래량 ×${s.vr}`, `거래대금 ${s.tv}억`];
@@ -426,7 +447,7 @@ function render(){
       <div class="srow"><span>어제 <b class="${s.ret1>=0?'pos':'neg'}">+${(s.ret1*100).toFixed(1)}%</b> 종가 <b>${W(s.close)}</b></span>${info.map(x=>`<span>${x}</span>`).join("")}</div>
       <div class="srow"><span>매수 <b>오늘 15:20 3조건 충족 시 종가</b></span><span>매도 <b>내일 09:00 시가 전량(가격 불문)</b></span></div>
       <div class="srow"><span>기대 매도가 <b class="pos">매수가 +${((ost.mean||0)*100).toFixed(2)}%</b></span><span>중앙 +${((ost.median||0)*100).toFixed(2)}%</span><span>하방5% <b class="neg">${((ost.p05||0)*100).toFixed(1)}%</b></span></div></div>`;}).join("")
-    : '<div class="empty">워치리스트 없음.</div>';
+    : '<div class="empty">워치리스트 없음.</div>');
   document.getElementById("onStats").innerHTML = ost.n ? `📊 <b>실측 통계</b> (${ost.from}~, 신호 ${ost.n.toLocaleString()}건, 매 빌드 원데이터 재계산): 1박 평균 <b>${(ost.mean*100).toFixed(2)}%</b> · 중앙 ${(ost.median*100).toFixed(2)}% · 승률 ${(ost.win*100).toFixed(0)}% · 5%분위 <b class="neg">${(ost.p05*100).toFixed(1)}%</b> · 95%분위 +${(ost.p95*100).toFixed(1)}%. 왕복 비용 0.35% 차감 시 평균 <b>${((ost.mean-0.0035)*100).toFixed(2)}%/박</b> — <b>중앙값은 비용 미달</b>(절반의 거래는 손실, 평균은 소수 급등이 견인).${ost.off_mean!=null?` <b>국면별</b>: Risk-Off 밤 net ${((ost.off_mean-0.0035)*100).toFixed(2)}% vs 그 외 국면 net ${((ost.non_mean-0.0035)*100).toFixed(2)}% — 수익이 고변동 국면에 집중.`:''} <b>총자산의 30% 이하</b>로만 운용 권장(전액 복리 시 변동성 끌림으로 MDD −67% 이력).` : "";
   // 전략/검증
   const b=DATA.backtest;
