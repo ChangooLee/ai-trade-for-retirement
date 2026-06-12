@@ -62,24 +62,39 @@ def fetch_daily_ohlcv(
     return None
 
 
-def load_krx_auth_key() -> str:
-    """환경변수 또는 repo 루트 .env에서 KRX_AUTH_KEY 로드."""
-    key = os.getenv("KRX_AUTH_KEY", "").strip()
+def _load_env_key(var: str) -> str:
+    """환경변수 우선, 없으면 repo 루트 .env(또는 상위 디렉터리)에서 var 로드."""
+    key = os.getenv(var, "").strip()
     if key:
         return key
-    env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
-    try:
-        with open(env_path, encoding="utf-8") as f:
-            for line in f:
-                s = line.strip()
-                if s.startswith("KRX_AUTH_KEY="):
-                    return s.split("=", 1)[1].strip().strip('"').strip("'")
-    except OSError:
-        pass
+    here = os.path.dirname(os.path.abspath(__file__))
+    # app/data → app → repo 루트 순으로 .env 탐색 (이전 구현은 app/.env만 봐서 로컬에서 못 찾던 버그)
+    for up in ("..", os.path.join("..", ".."), os.path.join("..", "..", "..")):
+        env_path = os.path.join(here, up, ".env")
+        try:
+            with open(env_path, encoding="utf-8") as f:
+                for line in f:
+                    s = line.strip()
+                    if s.startswith(f"{var}="):
+                        return s.split("=", 1)[1].strip().strip('"').strip("'")
+        except OSError:
+            continue
     return ""
 
 
-def fetch_top_liquid_universe(auth_key, bas_dd, markets, top_n, delay=0.3):
+def load_krx_auth_key() -> str:
+    """환경변수 또는 repo 루트 .env에서 KRX_AUTH_KEY 로드."""
+    return _load_env_key("KRX_AUTH_KEY")
+
+
+def fetch_top_liquid_universe(auth_key, bas_dd, markets, top_n, delay=0.3,
+                              rank_by="trdval", min_trdval=0.0):
+    """asof 단일일 단면으로 유니버스 top_n 선정 (전체 재수집 경로용).
+
+    rank_by="trdval": 당일 거래대금 상위 top_n.
+    rank_by="mktcap": 당일 거래대금 ≥ min_trdval 종목 중 시가총액 상위 top_n (결정 0003/0005).
+    단일일 거래대금이라 하한은 근사 — 안정적 일일 운영은 update_data.fetch_universe_trdval20(20일 평균) 사용.
+    """
     import requests
     ep = {"KOSPI": "sto/stk_bydd_trd", "KOSDAQ": "sto/ksq_bydd_trd"}
     rows = []
@@ -99,15 +114,22 @@ def fetch_top_liquid_universe(auth_key, bas_dd, markets, top_n, delay=0.3):
                     val = float(str(d.get("ACC_TRDVAL", "0")).replace(",", "") or 0)
                 except ValueError:
                     val = 0.0
-                rows.append((code, d.get("ISU_NM", ""), mk, val))
+                try:
+                    cap = float(str(d.get("MKTCAP", "0")).replace(",", "") or 0)
+                except ValueError:
+                    cap = 0.0
+                rows.append((code, d.get("ISU_NM", ""), mk, val, cap))
         except Exception as e:
             print(f"  ! {ep[mk]} 실패: {e}", file=sys.stderr)
     if not rows:
         return []
-    df = pd.DataFrame(rows, columns=["code", "name", "market", "trdval"])
+    df = pd.DataFrame(rows, columns=["code", "name", "market", "trdval", "mktcap"])
     df = df[~df["name"].str.contains("우$|우B|스팩|[0-9]호$", regex=True, na=False)]
-    return list(df.sort_values("trdval", ascending=False).head(top_n)
-                [["code", "name", "market"]].itertuples(index=False, name=None))
+    if rank_by == "mktcap":
+        df = df[(df["trdval"] >= min_trdval) & (df["mktcap"] > 0)].sort_values("mktcap", ascending=False)
+    else:
+        df = df.sort_values("trdval", ascending=False)
+    return list(df.head(top_n)[["code", "name", "market"]].itertuples(index=False, name=None))
 
 
 def fetch_index_panel(auth_key, fromdate, todate, cache_dir, delay=0.15):

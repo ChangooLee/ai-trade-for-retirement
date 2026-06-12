@@ -331,7 +331,7 @@ function render(){
   const e=DATA.exposure, m=e.target_exposure;
   const mc=m>=.95?"up-c":m>=.6?"half-c":"down-c";
   const fresh = DATA.meta.system_date && DATA.meta.system_date!==DATA.meta.asof ? ` (시스템 ${DATA.meta.system_date} · 최신 거래일 EOD)` : "";
-  document.getElementById("tagline").textContent=`${DATA.meta.strategy} · 데이터 기준 ${DATA.meta.asof}${fresh} · 집행 ${DATA.meta.next_day} 시가 · 거래대금상위 ${DATA.meta.universe_count}종목`;
+  document.getElementById("tagline").textContent=`${DATA.meta.strategy} · 데이터 기준 ${DATA.meta.asof}${fresh} · 집행 ${DATA.meta.next_day} 시가 · ${DATA.meta.universe_short||'거래대금상위'} ${DATA.meta.universe_count}종목`;
   const pf=compute();
   // 서킷브레이커 (월 손실 한도 −3%)
   const cb=cbStatus(pf.total); window.CB_TRIP=cb.tripped;
@@ -373,7 +373,7 @@ function render(){
           <div>평가금액 <b>${W(h.value)}</b> <span class="sub">현재가×수량</span></div>
           <div>평가손익 <b class="${h.ret>=0?'pos':'neg'}">${W(h.value-h.cost)} (${P(h.ret)})</b></div>
           <div>현재가 <b>${W(h.cur)}</b> <span class="sub">/ 진입 ${W(h.entry_price)}</span></div></div>
-        <div class="meta" style="color:#fbbf24">⚠ 거래대금 ${DATA.meta.universe_count}위 밖 — 가격·손익만 추적(차트·목표/손절·TDA 신호 미제공)</div></div>`);
+        <div class="meta" style="color:#fbbf24">⚠ 유니버스(상위 ${DATA.meta.universe_count}종목) 밖 — 가격·손익만 추적(차트·목표/손절·TDA 신호 미제공)</div></div>`);
       return;
     }
     const isSell = h.status==="매도예정" || h.status==="TDA매도";
@@ -387,7 +387,7 @@ function render(){
         <span class="pill ${pill}">${h.status} · ${(h.weight*100).toFixed(1)}%</span>
         <button class="btn x" onclick="del('${h.ticker}','${h.entry_date}')">삭제</button></div>
       <div class="meta">진입 ${h.entry_date} @ ${W(h.entry_price)} × ${h.shares}주 · ${h.days}거래일 보유 / 남은 ${h.rem}일</div>
-      ${reason}${h.chart?chartBlock(h.ticker):'<div class="meta" style="color:#8b97a7">차트 미제공(거래대금 상위 300 외) · 지표·TDA 신호는 분석됨</div>'}
+      ${reason}${h.chart?chartBlock(h.ticker):`<div class="meta" style="color:#8b97a7">차트 미제공(유니버스 상위 ${DATA.meta.universe_count} 외) · 지표·TDA 신호는 분석됨</div>`}
       <div class="plan">
         <div>매입액 <b>${W(h.cost)}</b> <span class="sub">${W(h.entry_price)}×${h.shares}주</span></div>
         <div>평가금액 <b>${W(h.value)}</b> <span class="sub">현재가×수량</span></div>
@@ -468,10 +468,13 @@ function render(){
       <li><b>방향</b> 6–1개월 모멘텀 + 종가/50일선 추세를 z-score 결합</li>
       <li><b>매수</b> 추세&gt;0 & 위상리스크&lt;중앙값, 종합점수(방향−0.7·리스크) 상위 / <b>매도</b> 위상리스크 상위 25%(노름 높음·상승=전조)</li></ol></div>
     <div class="card"><h3 style="margin:0 0 6px">🔬 백데이터 검증 — 모멘텀·추세 전략</h3>
-      ${b.pit?`<div class="warn" style="margin:4px 0">⚠ <b>생존편향 제거(PIT) 재검증 결과</b> — 상장폐지 종목까지 포함한 시점별 데이터(2,819종목)로 재검증한 결과, 이 전략의 절대수익 주장은 철회합니다.</div>
-      <div class="kpis"><span>PIT CAGR<b class="neg">${(b.pit.cagr*100).toFixed(1)}%</b></span><span>PIT MDD<b class="neg">${Math.round(b.pit.mdd*100)}%</b></span><span>승률<b>${Math.round(b.pit.win*100)}%</b></span><span>同기간 KOSPI<b class="pos">+${Math.round(b.pit.kospi*100)}%</b></span></div>
-      <div class="meta">원인: <b>'거래대금 상위' 유니버스 자체가 ${Math.round(b.pit.pool*100)}% 드리프트</b>(투기 테마주 풀 — 생존 데이터에선 승자만 남아 안 보였음). 전략 선별은 풀 대비 <b>+${Math.round(b.pit.vs_pool*100)}%p 우위</b>로 스킬은 실재하나 풀의 하락을 못 이김. <b>시가총액 기반 유니버스로 재설계 검증 중.</b> 연도별(PIT): ${b.pit.yearly.map(y=>y[0]+" "+(y[1]>=0?"+":"")+Math.round(y[1]*100)+"%").join(" · ")}</div>
-      <div class="meta">참고 — 생존 패널(부풀려진 수치): Sharpe ${b.sharpe} · MDD ${Math.round(b.mdd*100)}% · 승률 ${Math.round(b.win_rate*100)}% — 현재 상장 종목만으로 계산되어 신뢰 불가.</div>`:
+      ${b.pit?`<div class="note" style="margin:4px 0;border-left-color:#34d399">✅ <b>생존편향 제거(PIT) 검증 — 라이브 유니버스(${esc(b.pit.universe)})와 일치</b>. 상장폐지 종목까지 포함한 시점별 데이터로 검증한 <b>신뢰 기준</b> 수치입니다(생존 패널의 부풀린 수치 아님).</div>
+      <div class="kpis"><span>PIT 총수익<b class="pos">+${Math.round(b.pit.total*100)}%</b></span><span>CAGR<b class="${b.pit.cagr>=0?'pos':'neg'}">${(b.pit.cagr*100).toFixed(1)}%</b></span><span>MDD<b class="neg">${Math.round(b.pit.mdd*100)}%</b></span><span>Sharpe<b>${b.pit.sharpe}</b></span><span>승률<b>${Math.round(b.pit.win*100)}%</b></span></div>
+      <div class="meta">同기간 PIT 풀 기준선(상위300 동일가중) <b>+${Math.round(b.pit.pool*100)}%</b> 대비 전략 <b class="pos">+${Math.round(b.pit.vs_pool*100)}%p</b> — 생존편향 없이도 실재하는 <b>선별 알파</b>. 단 <b class="neg">MDD ${Math.round(b.pit.mdd*100)}%로 깊고 레짐 의존</b>(연도별: ${b.pit.yearly.map(y=>y[0]+" "+(y[1]>=0?"+":"")+Math.round(y[1]*100)+"%").join(" · ")}).</div>
+      ${b.pit.kospi?`<div class="meta" style="color:#fbbf24">⚠ <b>정직 고지</b>: 같은 기간 <b>KOSPI(시총가중) 매수후 보유 +${Math.round(b.pit.kospi*100)}%</b>(CAGR ${Math.round(b.pit.kospi_cagr*100)}%)로 이 전략(+${Math.round(b.pit.total*100)}%, CAGR ${(b.pit.cagr*100).toFixed(1)}%)을 <b>크게 상회</b> — 지수는 소수 초대형주가 견인. '등가중 풀 대비 알파'는 실재하나 '<b>인덱스 초과수익은 아님</b>'(이 강세장 한정). 가치는 알파보다 <b>낮은 MDD·국면 분산</b>에 있음.</div>`:''}
+      ${b.pit.cb?`<div class="meta">⚙ <b>운영 구성(복합 장기80%+오버나이트20% + 월손실 -3% 서킷브레이커)</b>: CAGR <b class="pos">+${Math.round(b.pit.cb.cagr*100)}%</b> · MDD <b>${Math.round(b.pit.cb.mdd*100)}%</b> · 최악월 <b>${(b.pit.cb.worst_month*100).toFixed(1)}%</b> — MDD를 −43%→−25%로, 최악월을 운영 가능한 한도로 묶음.</div>`:''}
+      ${b.pit.legacy_turnover?`<div class="meta" style="color:#8b97a7">전환 이력: 이전 '거래대금 상위' 유니버스는 풀 자체가 ${Math.round(b.pit.legacy_turnover.pool*100)}% 드리프트(투기 테마)로 PIT CAGR ${(b.pit.legacy_turnover.cagr*100).toFixed(1)}%였음 → 시가총액 유니버스로 전환(결정 0005).</div>`:''}
+      <div class="meta" style="color:#8b97a7">참고 — 생존 패널(부풀려진 수치, 신뢰 불가): Sharpe ${b.sharpe} · MDD ${Math.round(b.mdd*100)}% · 승률 ${Math.round(b.win_rate*100)}%.</div>`:
       `<div class="kpis"><span>Sharpe<b>${b.sharpe}</b></span><span>MDD<b class="neg">${Math.round(b.mdd*100)}%</b></span><span>Calmar<b>${b.calmar}</b></span><span>승률<b>${Math.round(b.win_rate*100)}%</b></span></div>`}
       <ol class="steps" style="margin-top:8px">
       <li><b>룩어헤드 차단</b> 신호는 기준일 종가로 계산하고 집행은 다음 거래일 시가로 가정 / 주봉 신호는 그 주 마감 후에만 확정</li>
@@ -522,6 +525,6 @@ document.getElementById("addBtn").addEventListener("click",addHolding);
 document.getElementById("capital").value=capital;
 document.getElementById("capital").addEventListener("change",e=>{capital=+e.target.value||DATA.initial_capital;save();render();});
 document.getElementById("bdate").value=DATA.meta.asof;
-document.getElementById("foot").innerHTML=`데이터: KRX 공식 API 종가(EOD), 매 거래일 갱신. 신호는 기준일 종가로 계산하고 집행은 다음 거래일 시가를 가정합니다. 보유·자본은 이 브라우저에만 저장됩니다.<br>검증 한계: 현재 상장 종목 기준이라 생존편향이 있고, 2018–19형 약세 레짐에선 부진할 수 있으며, 개별 종목의 수익을 보장하지 않습니다. 생성 ${DATA.meta.generated}`;
+document.getElementById("foot").innerHTML=`데이터: KRX 공식 API 종가(EOD), 매 거래일 갱신. 신호는 기준일 종가로 계산하고 집행은 다음 거래일 시가를 가정합니다. 보유·자본은 이 브라우저에만 저장됩니다.<br>검증: 전략 성과는 상장폐지 포함 PIT 패널로 검증(생존편향 제거, 위 카드). 단 라이브 후보는 현재 상장 종목에서 선정되고, 레짐 의존(2018·2019·2022·2024 음)이며 MDD가 깊어 서킷브레이커로 한도 관리합니다. 개별 종목의 수익은 보장하지 않습니다. 생성 ${DATA.meta.generated}`;
 renderHoldInput();render();
 </script></body></html>

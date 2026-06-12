@@ -93,7 +93,9 @@ def main():
     today = dt.date.today().strftime("%Y%m%d")             # 시스템 날짜
     asof_str = args.asof or resolve_latest_official(auth, today)   # 최신 거래일(EOD 발표분)
     if args.refresh or not os.path.exists(dpath):
-        L.build_daily_ohlcv(asof_str, args.fromdate, cfg["universe"]["top_n_by_trdval20"], dpath)
+        _u = cfg["universe"]
+        L.build_daily_ohlcv(asof_str, args.fromdate, _u["top_n"], dpath,
+                            rank_by=_u.get("rank_by", "trdval"), min_trdval=_u.get("min_trdval", 0.0))
     if args.refresh or not os.path.exists(ipath):
         L.build_index_ohlcv(asof_str, args.fromdate, ipath)
     daily = L.load_daily_ohlcv(dpath)
@@ -273,9 +275,13 @@ def main():
                  "system_date": f"{today[:4]}-{today[4:6]}-{today[6:]}",
                  "strategy": "F 리더 + 20주선 눌림 + 8주(40거래일) 보유 + D4 변동성 노출",
                  "universe_count": int(len(uni)), "generated": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
-                 "universe_rule": (f"KOSPI+KOSDAQ · 최근 20거래일 평균 거래대금 상위 {cfg['universe']['top_n_by_trdval20']}"
-                                   f" · 종가 ≥ {cfg['universe']['min_close']:,}원 · 상장 ≥ {cfg['universe']['min_listing_days']}거래일"
-                                   f" · 우선주·스팩 제외" + (f" · 관리 지정 {len(managed)}종목 상시 포함" if managed else "")),
+                 "universe_short": ("시가총액상위" if cfg['universe'].get('rank_by') == 'mktcap' else "거래대금상위"),
+                 "universe_rule": ((f"KOSPI+KOSDAQ · 시가총액 상위 {cfg['universe']['top_n']}"
+                                    f"(20일 평균 거래대금 ≥ {cfg['universe'].get('min_trdval', 0)/1e8:.0f}억 종목 중)"
+                                    if cfg['universe'].get('rank_by') == 'mktcap'
+                                    else f"KOSPI+KOSDAQ · 최근 20거래일 평균 거래대금 상위 {cfg['universe']['top_n']}")
+                                   + f" · 종가 ≥ {cfg['universe']['min_close']:,}원 · 상장 ≥ {cfg['universe']['min_listing_days']}거래일"
+                                   + f" · 우선주·스팩 제외" + (f" · 관리 지정 {len(managed)}종목 상시 포함" if managed else "")),
                  "managed_count": len(managed)},
         "exposure": {"mode": exp["mode"], "target_exposure": exp["target_exposure"], "cash": exp["cash"],
                      "kospi_above_40w": exp["kospi"]["above_40w"], "kosdaq_above_40w": exp["kosdaq"]["above_40w"],

@@ -24,10 +24,12 @@ POSITIONS_SCHEMA = ["ticker", "name", "market", "entry_date", "entry_price", "en
                     "exit_date", "exit_price", "exit_reason", "realized_return", "notes"]
 
 
-def build_daily_ohlcv(asof: str, fromdate: str, top_n: int, out_path: str, delay: float = 0.4) -> pd.DataFrame:
-    """유니버스 전 종목 일봉을 모아 long DataFrame + parquet 저장."""
+def build_daily_ohlcv(asof: str, fromdate: str, top_n: int, out_path: str, delay: float = 0.4,
+                      rank_by: str = "trdval", min_trdval: float = 0.0) -> pd.DataFrame:
+    """유니버스 전 종목 일봉을 모아 long DataFrame + parquet 저장 (rank_by: mktcap|trdval)."""
     auth = load_krx_auth_key()
-    uni = fetch_top_liquid_universe(auth, asof, ["KOSPI", "KOSDAQ"], top_n, delay)
+    uni = fetch_top_liquid_universe(auth, asof, ["KOSPI", "KOSDAQ"], top_n, delay,
+                                    rank_by=rank_by, min_trdval=min_trdval)
     frames = []
     for code, name, market in uni:
         d = fetch_daily_ohlcv(code, fromdate, asof, CACHE, delay)

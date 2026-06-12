@@ -10,7 +10,9 @@ paths:
 
 universe:
   markets: ["KOSPI", "KOSDAQ"]
-  top_n_by_trdval20: 300   # 검색·분석 커버리지 확대(유진테크 등 거래대금 180~300위 포함)
+  top_n: 300               # 유니버스 종목 수 (랭킹 기준은 rank_by)
+  rank_by: mktcap          # mktcap(시가총액) | trdval(거래대금). PIT 검증: 시총 유니버스가 생존편향 제거 후 +67.7% vs 거래대금 -20.4% (결정 0003/0005)
+  min_trdval: 500000000    # 유동성 하한: 20일 평균 거래대금 ≥ 5억 (시총 랭킹 전 필터, 백테스트와 동일)
   min_listing_days: 252
   min_close: 1000
   exclude_spac: true        # 스팩은 이름 정규식("스팩")으로 제외 (코드 반영됨)
