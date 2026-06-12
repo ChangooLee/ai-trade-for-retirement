@@ -186,6 +186,10 @@ def main():
         cagr, dd, shp, _ = metrics(eq, cap0)
         print(f"  {name:<28s}{cagr*100:+7.1f}%{dd*100:+7.1f}%{shp:8.2f}")
     print("  ※ 상관이 낮을수록 복합의 MDD 완화 효과 큼. 단타는 분단위 슬리피지 미반영(상한).")
+    import os
+    os.makedirs("state", exist_ok=True)
+    pd.DataFrame({"long": rl, "overnight": rs}).to_csv("state/sleeve_returns.csv")
+    print("  슬리브 일수익 저장: state/sleeve_returns.csv", file=sys.stderr)
 
 
 if __name__ == "__main__":
