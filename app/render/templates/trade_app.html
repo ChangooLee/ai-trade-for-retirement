@@ -55,7 +55,6 @@ canvas{width:100%;height:150px;display:block;background:var(--panel);border:1px 
 .tickwrap input{border-radius:0;text-align:right;touch-action:none;-webkit-user-select:none;user-select:none}
 .tickbtn{width:34px;background:var(--panel);color:var(--ink2);border:1px solid var(--line2);font-size:18px;font-weight:700;cursor:pointer;line-height:1;user-select:none;-webkit-user-select:none;touch-action:manipulation}
 .tickbtn:first-child{border-radius:8px 0 0 8px}.tickbtn:last-child{border-radius:0 8px 8px 0}.tickbtn:active{background:var(--line2)}
-.tickhint{font-size:10.5px;color:var(--mut);display:block;margin-top:2px}
 .btn.ghost{background:var(--card);color:var(--ink2);border-color:var(--line2)}.btn.ghost:hover{background:var(--panel)}
 .btn.x{background:var(--card);color:var(--up);border:1px solid var(--line2);padding:4px 9px;font-size:11px}.btn.x:hover{border-color:var(--up)}
 table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden;font-size:12.5px;margin:6px 0}
@@ -102,10 +101,6 @@ details{margin-top:6px}summary{cursor:pointer;color:var(--ink2);font-size:12.5px
 
 <h1>LEADERS DESK</h1>
 <div class="tag" id="tagline"></div>
-<div class="badges">
-  <span class="badge g">KRX 공식 데이터</span><span class="badge g">No Lookahead</span>
-  <span class="badge b">Paper Trading</span><span class="badge b" id="storeBadge">로컬 저장(브라우저)</span>
-</div>
 <div id="authBar"></div>
 
 <div class="banner" id="banner"></div>
@@ -127,21 +122,12 @@ details{margin-top:6px}summary{cursor:pointer;color:var(--ink2);font-size:12.5px
   <div><label>매수가 <span class="sub" id="tickLbl"></span></label>
     <span class="tickwrap"><button type="button" class="tickbtn" id="priceDown">−</button>
       <input id="price" type="number" inputmode="numeric" style="width:96px" placeholder="원">
-      <button type="button" class="tickbtn" id="priceUp">+</button></span>
-    <span class="tickhint">버튼·휠·드래그 = 호가 1틱</span></div>
+      <button type="button" class="tickbtn" id="priceUp">+</button></span></div>
   <div><label>수량</label><input id="shares" type="number" style="width:90px" placeholder="주"></div>
   <div><label>매수일</label><input id="bdate" type="date" style="width:140px"></div>
   <button class="btn" id="addBtn">보유 추가</button>
-  <div style="margin-left:auto"><label>현금 투자액 · 원금(원)</label><input id="capital" type="number" style="width:150px"><span class="sub" style="display:block">실제 투입한 현금. 월 손실한도의 기준.</span></div>
+  <div><label>현금 투자액 · 원금(원)</label><input id="capital" type="number" style="width:150px"><span class="sub" style="display:block">실제 투입한 현금. 월 손실한도의 기준.</span></div>
 </div>
-<div class="form" style="margin-top:6px">
-  <div><label>현금 입금/출금</label><input id="cfAmt" type="number" style="width:130px" placeholder="원"></div>
-  <div><label>일자</label><input id="cfDate" type="date" style="width:140px"></div>
-  <button class="btn" onclick="addCashflow(1)">입금</button>
-  <button class="btn ghost" onclick="addCashflow(-1)">출금</button>
-  <div id="cfList" class="sub" style="margin-left:8px;align-self:center"></div>
-</div>
-<div id="holdInput"></div>
 
 <h2>내 포트폴리오 <span class="sub" style="font-weight:400" id="pfSub"></span></h2>
 <div class="summary-row" id="pfSummary"></div>
@@ -152,7 +138,7 @@ details{margin-top:6px}summary{cursor:pointer;color:var(--ink2);font-size:12.5px
 <div class="cards" id="sellCards"></div>
 
 <h2>매수/매도 기록 <span class="sub" style="font-weight:400">(실거래 손익)</span> <span class="sub" style="font-weight:400" id="logSub"></span></h2>
-<div class="dxline"><span class="lab">실거래 실적</span>위 <b>보유 종목</b>을 <b>매도 기록</b>으로 청산하면 여기에 <b>실현손익</b>이 쌓입니다(실제 트레이딩 기록). 승률·손익비·평균수익으로 본인 매매 성과를 추적하세요.</div>
+<div class="dxline"><span class="lab">실거래 실적</span>위 <b>보유 종목</b>을 클릭해 <b>매도</b>하면 여기에 <b>실현손익</b>이 쌓입니다(실제 트레이딩 기록). 승률·손익비·평균수익으로 본인 매매 성과를 추적하세요.</div>
 <div id="logStats" class="summary-row"></div>
 <div id="logTable"></div>
 </section>
@@ -250,7 +236,7 @@ function save(){ saveLocal(); pushToCloud(); }
 
 // ---- 구글 로그인 + 기기 간 동기화 (자체 서버 백엔드) ----
 const GCID = (DATA.meta.google_client_id||"").trim();   // OAuth 클라이언트 ID(공개값) — 빌드시 주입
-const SYNC_API = "/trading/api/userdata", LSTOK = "leaders_gtok_v1";
+const SYNC_API = "/trading/api/userdata", LSTOK = "leaders_gtok_v1", LSSIM = "leaders_sim_v1";
 let idToken=null, gUser=null, pushTimer=null, _dirty=false;
 const syncEnabled = () => !!GCID;
 function jwtPayload(t){ try{ return JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); }catch(e){ return {}; } }
@@ -282,7 +268,7 @@ function flagSynced(){ const b=document.getElementById("syncState"); if(b) b.tex
 function clearSession(){ idToken=null; gUser=null; try{localStorage.removeItem(LSTOK);}catch(e){} renderAuth(); if(typeof renderSim==="function") renderSim(); }
 
 async function setSession(token){
-  idToken=token; const p=jwtPayload(token); gUser={name:p.name, email:p.email, exp:p.exp};
+  idToken=token; const p=jwtPayload(token); gUser={name:p.name, email:p.email, exp:p.exp, sub:String(p.sub||"")};
   try{ localStorage.setItem(LSTOK, token); }catch(e){}
   renderAuth(); await reconcile(); renderSim();
 }
@@ -353,30 +339,97 @@ window.addEventListener("beforeunload",()=>{
       body:JSON.stringify({holdings, cashflows, tradelog, eqhist})}); }catch(e){}
   }
 });
-window.gLogout = ()=>{ try{ google.accounts.id.disableAutoSelect(); }catch(e){} clearSession(); };
+window.gLogout = ()=>{ try{ google.accounts.id.disableAutoSelect(); }catch(e){} simCacheClear(); clearSession(); };   // 명시적 로그아웃 → 시뮬 캐시 제거(M1, 수동만료는 유지)
 
 // ---- 알고리즘 시뮬레이터 (로그인 사용자, 백엔드 배치가 매일 운영) ----
 const SIM_API = "/trading/api/sim";
 let simData = null;
+// 시뮬 캐시 — 마지막 서버 상태를 이 기기에 보관(토큰 만료에도 사라지지 않게). 계정(sub)·갱신일·시각 태깅.
+const SIM_TTL = 24*3600*1000;   // 비로그인 읽기전용 캐시 수명(누수 방지)
+function simCacheClear(){ try{ localStorage.removeItem(LSSIM); }catch(e){} }
+function simCacheGet(){
+  try{ const o=JSON.parse(localStorage.getItem(LSSIM)||"null");
+    if(!(o && typeof o==="object" && o.data)) return null;                       // 형태 검증(N3)
+    if(o.ts && (Date.now()-o.ts) > SIM_TTL){ simCacheClear(); return null; }      // 오래된 캐시 폐기(N1)
+    return o;
+  }catch(e){ return null; }
+}
+function simCacheSet(o){ try{ localStorage.setItem(LSSIM, JSON.stringify(o)); }catch(e){} }
+function maskEmail(e){ e=String(e||""); const i=e.indexOf("@"); return i<1 ? "다른 구글 계정" : e[0]+"•••"+e.slice(i); }
+function tdaysAgo(d){ const a=DATA.meta.asof; if(!d||!a) return null; return CAL.filter(x=>x>d && x<=a).length; }
+// 반환: "active"|"inactive"|"autherr"|"neterr"|"noauth". 실패 시 simData 보존(덮어쓰지 않음).
 async function simFetch(){
-  if(!idToken){ simData=null; return; }
-  try{ const r=await fetch(SIM_API,{headers:{Authorization:"Bearer "+idToken}}); simData = r.ok ? await r.json() : null; }
-  catch(e){ simData=null; }
+  if(!idToken){ simData=null; return "noauth"; }
+  let r;
+  try{ r=await fetch(SIM_API,{headers:{Authorization:"Bearer "+idToken}}); }
+  catch(e){ return "neterr"; }
+  if(r.status===401) return "autherr";
+  if(!r.ok) return "neterr";
+  try{ simData = await r.json(); }catch(e){ return "neterr"; }
+  if(simData && simData.active){
+    if(gUser && gUser.sub && DATA.meta.asof)     // 내 활성 시뮬 → 기기에 캐시
+      simCacheSet({sub:gUser.sub, email:gUser.email||"", savedAsof:DATA.meta.asof, ts:Date.now(), data:simData});
+    return "active";
+  }
+  const c=simCacheGet();                          // 서버가 '없음/종료' 확정 → 내 계정 캐시면 제거(M4)
+  if(c && c.sub && gUser && c.sub===gUser.sub) simCacheClear();
+  return "inactive";
+}
+function simLoginPrompt(relogin){
+  const el=document.getElementById("simSection"); if(!el) return;
+  el.innerHTML = relogin
+    ? '<div class="warn" style="border-left-color:#e0a93b"><b>세션 만료</b> — 우측 상단에서 다시 로그인하면 시뮬레이터가 복원되고 매일 서버 배치가 이어집니다.</div>'
+    : '<div class="note"><b>로그인</b>하면 알고리즘 시뮬레이터를 시작할 수 있습니다(우측 상단). 시작 후엔 브라우저를 꺼도 <b>매일 서버 배치</b>가 자동으로 페이퍼 매매를 이어갑니다.</div>';
+}
+function simReadonlyOrPrompt(relogin){    // 비로그인/만료 — 이 기기의 마지막 시뮬을 읽기전용으로(사라지지 않게)
+  const c=simCacheGet();
+  if(c && c.data && c.data.active){ renderSimCard(c.data, {readonly:true, email:c.email, savedAsof:c.savedAsof, relogin:!!relogin}); return; }
+  simLoginPrompt(relogin);
 }
 async function renderSim(){
   const el=document.getElementById("simSection"); if(!el) return;
   if(!syncEnabled()){ el.innerHTML='<div class="empty">구글 로그인(동기화) 설정 시 사용할 수 있습니다.</div>'; return; }
-  if(!idToken){ el.innerHTML='<div class="note"><b>로그인</b>하면 알고리즘 시뮬레이터를 시작할 수 있습니다(우측 상단). 시작 후엔 브라우저를 꺼도 <b>매일 서버 배치</b>가 자동으로 페이퍼 매매를 이어갑니다.</div>'; return; }
-  await simFetch();
-  if(!simData || !simData.active){ simStartForm(); return; }
-  const d=simData, cls=(d.total_pnl>=0?'pos':'neg'), days=(d.equity_curve||[]).length;
-  const aggr = {1:"기본",1.5:"적극",2:"공격",2.5:"최대"}[d.exposure_mult]||("×"+d.exposure_mult);
+  const expired = !!(idToken && gUser && gUser.exp && gUser.exp*1000 < Date.now());
+  if(!idToken || expired){ simReadonlyOrPrompt(expired); return; }
+  const st = await simFetch();
+  if(st==="neterr"){   // 연결 실패 — 시작폼으로 내몰지 말 것(시뮬은 서버에서 계속됨)
+    const c=simCacheGet();
+    if(c && c.data && c.data.active && (!gUser || c.sub===gUser.sub)){ renderSimCard(c.data, {readonly:true, email:c.email, savedAsof:c.savedAsof, neterr:true}); return; }
+    el.innerHTML='<div class="warn">시뮬레이터 연결 실패 — <a href="#" onclick="renderSim();return false">다시 시도</a></div>'; return;
+  }
+  if(st==="autherr"){ simReadonlyOrPrompt(true); return; }            // 만료 → 읽기전용 + 재로그인
+  if(st==="inactive"){
+    const c=simCacheGet();                                            // 이 계정엔 진행 중 시뮬 없음
+    const foreign = !!(c && c.data && c.data.active && c.sub && gUser && c.sub!==gUser.sub);
+    if(foreign){ const em=maskEmail(c.email); simCacheClear(); simStartForm(false, em); }  // 다른 계정 캐시 제거(M2)+마스킹 안내
+    else simStartForm(false, null);
+    return;
+  }
+  renderSimCard(simData, {readonly:false, email:(gUser&&gUser.email)||""});
+}
+function renderSimCard(d, opts){
+  opts=opts||{}; const el=document.getElementById("simSection"); if(!el) return;
+  const cls=(d.total_pnl>=0?'pos':'neg'), days=(d.equity_curve||[]).length;
+  const aggr={1:"기본",1.5:"적극",2:"공격",2.5:"최대"}[d.exposure_mult]||("×"+d.exposure_mult);
+  const acct = opts.email ? ` · <span title="이 시뮬을 소유한 계정">계정 ${esc(opts.email)}</span>` : "";
+  const ro = !!opts.readonly;
+  const ctrl = ro ? `<span class="sub" title="이 기기에 저장된 마지막 상태입니다">읽기 전용</span>`
+                  : `<button class="btn" onclick="simStartForm(true)">설정·리셋</button>`;
+  let banner="";
+  if(ro){   // 읽기전용 — 수치가 '현재'가 아님을 분명히(M6)
+    const ago=opts.savedAsof?tdaysAgo(opts.savedAsof):null;
+    const when = opts.savedAsof ? `데이터 기준 ${opts.savedAsof}${ago!=null&&ago>0?` · ${ago}거래일 전`:""} (오늘 ${DATA.meta.asof})` : "기준일 불명 · 오래된 값일 수 있음";
+    const head = opts.neterr ? "연결 실패 — 갱신 못 함" : (opts.relogin ? "세션 만료 — 재로그인 필요" : "로그아웃 상태");
+    banner = `<div class="warn" style="border-left-color:#e0a93b"><b>${head}</b> · 아래 수치는 <b>마지막 저장 시점 값(현재 값 아님)</b>입니다. ${when}. 로그인하면 계정의 최신 상태로 갱신됩니다.${opts.neterr?' <a href="#" onclick="renderSim();return false">다시 시도</a>':''}</div>`;
+  }
+  const lbl = ro ? "<span class='sub'>(마지막 저장)</span>" : "";
   el.innerHTML=`<div class="card">
-    <div class="hd"><b>운영 중</b> <span class="mono">시작 ${d.start_date} · 최근처리 ${d.last_processed||'대기'} · ${days}거래일 · 공격성 ${aggr}(×${d.exposure_mult}) · 한도 ${d.cb_limit>0?'−'+Math.round(d.cb_limit*100)+'%':'끔'}</span>
-      <button class="btn" onclick="simStartForm(true)">설정·리셋</button></div>
+    <div class="hd"><b>운영 중</b> <span class="mono">시작 ${d.start_date} · 최근처리 ${d.last_processed||'대기'} · ${days}거래일 · 공격성 ${aggr}(×${d.exposure_mult}) · 한도 ${d.cb_limit>0?'−'+Math.round(d.cb_limit*100)+'%':'끔'}${acct}</span>
+      ${ctrl}</div>
+    ${banner}
     <div class="summary-row">
-      <div>투자금<b>${W(d.investment)}</b></div><div>평가자산<b>${W(d.equity)}</b></div>
-      <div>총손익<b class="${cls}">${W(d.total_pnl)} (${P(d.total_ret)})</b></div>
+      <div>투자금<b>${W(d.investment)}</b></div><div>평가자산${lbl}<b>${W(d.equity)}</b></div>
+      <div>총손익${lbl}<b class="${cls}">${W(d.total_pnl)} (${P(d.total_ret)})</b></div>
       <div>실현손익<b class="${d.realized_pnl>=0?'pos':'neg'}">${W(d.realized_pnl)}</b></div>
       <div>체결<b>${d.n_trades}건 · 승률 ${Math.round((d.win_rate||0)*100)}%</b></div>
       <div>보유<b>${d.n_positions}종목 · 현금 ${W(d.cash)}</b></div></div>
@@ -423,13 +476,14 @@ window.runBacktest=async ()=>{
     drawSimChart(d.equity_curve||[], s.capital, "btChart");
   }catch(e){ el.innerHTML=`<div class="warn">백테스트 오류: ${esc(""+e)}</div>`; }
 };
-window.simStartForm=function(prefill){
+window.simStartForm=function(prefill, otherAcct){
   const el=document.getElementById("simSection"); if(!el) return;
   const d = (prefill && simData) ? simData : null;
   const inv = d ? d.investment : (DATA.initial_capital||10000000);
   const mult = d ? d.exposure_mult : 1.0, cb = d ? d.cb_limit : 0.03;
   const opt=(v,cur,lab)=>`<option value="${v}" ${(+cur===+v)?'selected':''}>${lab}</option>`;
-  el.innerHTML=`<div class="card"><div class="hd"><b>시뮬레이션 ${d?'설정 변경·재시작':'시작'} · 공격성 설정</b>${d?' <span class="sub">시작 시 기존 시뮬 기록 초기화</span>':''}</div>
+  const otherNote = otherAcct ? `<div class="warn" style="border-left-color:#e0a93b"><b>다른 계정(${esc(otherAcct)})에 진행 중인 시뮬레이터</b>가 있습니다. 그 시뮬을 보려면 우측 상단에서 해당 구글 계정으로 로그인하세요. 시뮬레이터는 <b>구글 계정별로</b> 저장됩니다.</div>` : "";
+  el.innerHTML=`<div class="card">${otherNote}<div class="hd"><b>시뮬레이션 ${d?'설정 변경·재시작':'시작'} · 공격성 설정</b>${d?' <span class="sub">시작 시 기존 시뮬 기록 초기화</span>':''}</div>
     <div class="srow" style="gap:10px;align-items:center;flex-wrap:wrap">
       <label>투자금액(원)</label><input id="simInv" type="number" value="${Math.round(inv)}" style="width:140px">
       <label>노출(공격성)</label><select id="simMult">${opt(1.0,mult,"기본 ×1.0 (노출 40%대)")}${opt(1.5,mult,"적극 ×1.5")}${opt(2.0,mult,"공격 ×2.0 (≈풀투자)")}${opt(2.5,mult,"최대 ×2.5")}</select>
@@ -449,13 +503,10 @@ window.simStart=async ()=>{
   }catch(e){ alert("시작 실패: "+e); } };
 function renderAuth(){
   const el=document.getElementById("authBar"); if(!el) return;
-  const badge=document.getElementById("storeBadge");
   if(!syncEnabled()){ el.innerHTML=''; return; }   // 미설정 → 코너 비움(로컬 저장 모드)
   if(gUser){
-    if(badge) badge.textContent="구글 동기화";
     el.innerHTML=`<span class="synced" title="기기 간 동일 데이터로 본인 서버에 저장됩니다">동기화</span> <span class="who" title="${esc(gUser.email||'')}">${esc(gUser.name||gUser.email||"로그인")}</span> <span id="syncState" class="sub"></span> <a href="#" onclick="gLogout();return false">로그아웃</a>`;
   } else {
-    if(badge) badge.textContent="로컬 저장(브라우저)";
     el.innerHTML='<span class="sub" title="로그인하면 어느 기기에서나 같은 보유·일지가 본인 서버에 동기화됩니다">동기화</span><div id="gbtn"></div>';
     setTimeout(initGoogleButton, 50);
   }
@@ -606,7 +657,7 @@ function qtyFor(s,pw,total){const sh=Math.max(0,Math.floor(pw*total/s.close));re
 function legacyBuyCard(tk,pw,total){
   const s=DATA.stocks[tk]; if(!s) return '';
   const {sh,amt}=qtyFor(s,pw,total), hi=s.high52>0? s.close/s.high52:null;
-  return `<div class="scard b"><div><span class="nm">${esc(s.name)}</span> <span class="mono">${tk}·${s.market}·${s.sector}</span></div>
+  return `<div class="scard b" style="cursor:pointer" onclick="buyPopup('${tk}')"><div><span class="nm">${esc(s.name)}</span> <span class="mono">${tk}·${s.market}·${s.sector}</span></div>
     ${miniChart(tk)}${dartBadge(tk)}
     <div class="srow"><span>RS <b>${Math.round(s.rs)}</b></span><span>52주고점 <b>${Math.round(s.high52*100)}%</b></span><span>20주선 <b>${P(s.dist_wma20,0)}</b></span></div>
     <div class="srow"><span>매수가 <b>${W(s.close)}</b></span><span>추천 <b>${sh.toLocaleString()}주</b> ≈${W(amt)}</span></div>
@@ -616,7 +667,7 @@ function legacyBuyCard(tk,pw,total){
 function legacySellCard(tk){
   const s=DATA.stocks[tk]; if(!s) return '';
   const below=s.wma20? s.close/s.wma20-1:null;
-  return `<div class="scard s"><div><span class="nm">${esc(s.name)}</span> <span class="mono">${tk}·${s.market}·${s.sector}</span></div>
+  return `<div class="scard s" style="cursor:pointer" onclick="buyPopup('${tk}')"><div><span class="nm">${esc(s.name)}</span> <span class="mono">${tk}·${s.market}·${s.sector}</span></div>
     ${miniChart(tk)}
     <div class="srow"><span>현재가 <b>${W(s.close)}</b></span><span>20주선 <b>${W(s.wma20)}</b> <b class="neg">${below!=null?P(below,1):''}</b></span></div>
     <div class="srow"><span class="neg">추세선 하향 · 모멘텀 약화 — 신규진입 회피 / 보유 시 청산 검토</span></div></div>`;
@@ -625,7 +676,7 @@ function legacySellCard(tk){
 function tdaBuyCard(tk,pw,total){
   const s=DATA.stocks[tk], t=s&&s.tda; if(!t) return '';
   const {sh,amt}=qtyFor(s,pw,total), safe=Math.round((1-t.risk_pct)*100);
-  return `<div class="scard b"><div><span class="nm">${esc(s.name)}</span> <span class="mono">${tk}·${s.market}·${s.sector}</span></div>
+  return `<div class="scard b" style="cursor:pointer" onclick="buyPopup('${tk}')"><div><span class="nm">${esc(s.name)}</span> <span class="mono">${tk}·${s.market}·${s.sector}</span></div>
     ${miniChart(tk)}${dartBadge(tk)}
     <div class="srow"><span>위상리스크 <b>${t.risk>=0?'+':''}${t.risk}</b> (안전 상위 ${safe}%)</span><span>추세 <b class="${t.dir>=0?'pos':'neg'}">${t.dir>=0?'+':''}${t.dir}</b></span></div>
     <div class="srow"><span>종합 <b>${t.score>=0?'+':''}${t.score}</b></span><span>풍경노름 <b>${t.pl_norm}</b></span><span>엔트로피 <b>${t.entropy}</b></span></div>
@@ -636,7 +687,7 @@ function tdaBuyCard(tk,pw,total){
 function tdaSellCard(tk){
   const s=DATA.stocks[tk], t=s&&s.tda; if(!t) return '';
   const risk=Math.round(t.risk_pct*100);
-  return `<div class="scard s"><div><span class="nm">${esc(s.name)}</span> <span class="mono">${tk}·${s.market}·${s.sector}</span></div>
+  return `<div class="scard s" style="cursor:pointer" onclick="buyPopup('${tk}')"><div><span class="nm">${esc(s.name)}</span> <span class="mono">${tk}·${s.market}·${s.sector}</span></div>
     ${miniChart(tk)}
     <div class="srow"><span>위상리스크 <b class="neg">${t.risk>=0?'+':''}${t.risk}</b> (상위 ${risk}% 위험)</span><span>추세 <b class="${t.dir>=0?'pos':'neg'}">${t.dir>=0?'+':''}${t.dir}</b></span></div>
     <div class="srow"><span>${t.rising?'<b class="neg">노름 상승(전조)</b>':'높은 노름'}</span><span>엔트로피 <b>${t.entropy}</b></span><span>격동 <b>${t.turb!=null?t.turb:'—'}</b></span></div>
@@ -689,14 +740,13 @@ function render(){
     : cb.tripped
       ? `<div class="warn" style="border-left-color:#f0584c;background:#241417"><b class="neg">월 손실 한도 도달</b> — 당월 손익 <b class="neg">${P(cb.mtd)} (${W(cb.mtdWon)})</b> (원금 ${W(cb.prin)} 대비). <b>당월 신규 매수 중단</b>(보유분은 시간청산·TDA 규칙 유지). ${cb.key} 종료 후 자동 해제.<br>${cbBasis}</div>`
       : `<div class="note" style="border-left-color:#34c77b"><b>서킷브레이커 정상</b> — 당월 손익 <b class="${cb.mtd>=0?'pos':'neg'}">${P(cb.mtd)} (${W(cb.mtdWon)})</b> (원금 ${W(cb.prin)} 대비). 한도 −${(CB_LIMIT*100).toFixed(0)}%까지 여유 <b>${P(cb.mtd+CB_LIMIT)}</b>.<br>${cbBasis}</div>`;
-  // 배너
+  // 배너 (slots·pw: 매수 후보 사이징에도 사용)
   const slots=Math.min(DATA.sizing.max_positions,Math.ceil(m/DATA.sizing.base_slot_weight)), pw=slots?m/slots:0;
   document.getElementById("banner").innerHTML=`<div class="mode ${mc}">${e.mode}</div>
     <div><div class="k">목표 총노출(D4)</div><b>${Math.round(m*100)}%</b></div>
     <div><div class="k">KOSPI 40주선</div><b>${e.kospi_above_40w?"위 ▲":"아래 ▼"}</b></div>
     <div><div class="k">KOSDAQ 40주선</div><b>${e.kosdaq_above_40w?"위 ▲":"아래 ▼"}</b></div>
-    <div><div class="k">변동성분위 K/Q</div><b>${Math.round(e.kospi_vol_percentile*100)}/${Math.round(e.kosdaq_vol_percentile*100)}</b></div>
-    <div><div class="k">목표 종목</div><b>${slots}×${(pw*100).toFixed(1)}%</b></div>`;
+    <div><div class="k">변동성분위 K/Q</div><b>${Math.round(e.kospi_vol_percentile*100)}/${Math.round(e.kosdaq_vol_percentile*100)}</b></div>`;
   document.getElementById("regimeNote").innerHTML=regimeNote();
   // 경고
   let warns="";
@@ -715,10 +765,10 @@ function render(){
   const hc=[], sc=[];
   pf.open.forEach(h=>{
     if(!h.analyzed){   // 유니버스 외 — 가격·손익만 추적
-      hc.push(`<div class="card hold"><div class="hd"><b>${esc(h.name||h.ticker)}</b> <span class="mono">${h.ticker}·${h.market||''}</span>
+      hc.push(`<div class="card hold" style="cursor:pointer" onclick="sellPopup('${h.ticker}','${h.entry_date}')"><div class="hd"><b>${esc(h.name||h.ticker)}</b> <span class="mono">${h.ticker}·${h.market||''}</span>
         <span class="pill hold">유니버스 외 · ${(h.weight*100).toFixed(1)}%</span>
-        <button class="btn" onclick="recordSell('${h.ticker}','${h.entry_date}')">매도 기록</button>
-        <button class="btn x" onclick="del('${h.ticker}','${h.entry_date}')">삭제</button></div>
+        <button class="btn" onclick="event.stopPropagation();sellPopup('${h.ticker}','${h.entry_date}')">매도</button>
+        <button class="btn x" onclick="event.stopPropagation();del('${h.ticker}','${h.entry_date}')">삭제</button></div>
         <div class="meta">진입 ${h.entry_date} @ ${W(h.entry_price)} × ${h.shares}주</div>
         <div class="plan">
           <div>매입액 <b>${W(h.cost)}</b> <span class="sub">${W(h.entry_price)}×${h.shares}주</span></div>
@@ -737,11 +787,11 @@ function render(){
     const reason = h.status==="매도예정" ? `<div class="srow"><b class="neg">40거래일 시간청산 도달 — 다음 거래일 시가 매도</b></div>`
       : caution ? `<div class="srow"><b style="color:#e0a93b">변동성 주의(참고·보유) — 위상 고위험(상위 ${Math.round(h.tda.risk_pct*100)}%)${downtrend?' · 추세 하향':''}. <span class="sub">TDA 청산은 백테스트상 수익을 깎아 매도 트리거로 쓰지 않음 — 변동성 인지용</span></b></div>` : "";
     const tdaLine = h.tda ? `<div>TDA 위상리스크 <b class="${caution&&downtrend?'neg':''}">${h.tda.risk>=0?'+':''}${h.tda.risk}</b> <span class="sub">상위 ${Math.round(h.tda.risk_pct*100)}% 위험${trd} (참고)</span></div>` : "";
-    const card=`<div class="card ${cls}">
+    const card=`<div class="card ${cls}" style="cursor:pointer" onclick="sellPopup('${h.ticker}','${h.entry_date}')">
       <div class="hd"><b>${esc(h.name||h.ticker)}</b> <span class="mono">${h.ticker}·${h.market||''}·${h.sector||''}</span>
         <span class="pill ${pill}">${h.status} · ${(h.weight*100).toFixed(1)}%</span>
-        <button class="btn" onclick="recordSell('${h.ticker}','${h.entry_date}')">매도 기록</button>
-        <button class="btn x" onclick="del('${h.ticker}','${h.entry_date}')">삭제</button></div>
+        <button class="btn" onclick="event.stopPropagation();sellPopup('${h.ticker}','${h.entry_date}')">매도</button>
+        <button class="btn x" onclick="event.stopPropagation();del('${h.ticker}','${h.entry_date}')">삭제</button></div>
       <div class="meta">진입 ${h.entry_date} @ ${W(h.entry_price)} × ${h.shares}주 · ${h.days}거래일 보유 / 남은 ${h.rem}일</div>
       ${reason}${h.chart?chartBlock(h.ticker):`<div class="meta" style="color:#8b8f97">차트 미제공(유니버스 상위 ${DATA.meta.universe_count} 외) · 지표·TDA 신호는 분석됨</div>`}
       <div class="plan">
@@ -840,61 +890,94 @@ function render(){
       <li><b>D4 재검증</b> 시장별 변동성 타게팅 노출을 per-market min()으로 재검증</li>
       <li><b>설계 근거</b> 캔들패턴·돌파·VCP는 일반화 검증서 초과수익 없어 제외 / 강제 손절은 시간청산 대비 성과 악화로 미사용</li></ol>
       <div class="meta" style="margin-top:6px">※ TDA는 방향이 아닌 리스크/청산 신호. 모든 표시 신호는 검증 재정립까지 참고용 — 실매매 진입 근거로 사용하지 말 것.</div></div>`;
-  renderPaperLog(); renderCashflows();
+  renderPaperLog();
   paintCharts();
 }
 window.addEventListener("resize",()=>setTimeout(paintCharts,100));
 
 // ---- 입력 ----
-function renderHoldInput(){
-  const el=document.getElementById("holdInput");
-  if(!holdings.length){el.innerHTML='';return;}
-  el.innerHTML='<table><thead><tr><th>종목</th><th>매수일</th><th class="num">매수가</th><th class="num">수량</th><th></th></tr></thead><tbody>'+
-    holdings.map(h=>{const mt=meta(h.ticker);const ext=DATA.stocks[h.ticker]?'':' <span style="color:#e0a93b">·유니버스 외</span>';return `<tr><td><b>${esc(mt.name||h.ticker)}</b> <span class="mono">${h.ticker}</span>${ext}</td><td>${h.entry_date}</td><td class="num">${W(h.entry_price)}</td><td class="num">${h.shares}주</td><td><button class="btn x" onclick="del('${h.ticker}','${h.entry_date}')">삭제</button></td></tr>`;}).join("")+'</tbody></table>';
+function renderHoldInput(){   // 입력 표는 제거(하단 보유 카드가 동일 정보+매도/삭제 제공). 입력란 값만 유지.
+  const el=document.getElementById("holdInput"); if(el) el.innerHTML='';
 }
-window.del=function(tk,date){ if(!confirm("이 보유 기록을 삭제할까요? (오입력 정정용 — 매도 실적이 필요하면 '매도 기록'을 쓰세요)")) return;
+window.del=function(tk,date){ if(!confirm("이 보유 기록을 삭제할까요? (오입력 정정용 — 매도 실적이 필요하면 종목을 클릭해 '매도'하세요)")) return;
   holdings=holdings.filter(h=>!(h.ticker===tk&&h.entry_date===date));save();renderHoldInput();render();};
-// 매도 기록: 보유 → 청산 거래(일지). 실현손익 누적 = 페이퍼 트레이딩 실적.
-window.recordSell=function(tk,date){
-  const h=holdings.find(x=>x.ticker===tk&&x.entry_date===date); if(!h) return;
-  const m=meta(tk), curp=m.cur;
-  const ans=prompt(`'${m.name||tk}' 매도 기록\n수량 ${h.shares}주 · 진입 ${W(h.entry_price)}\n매도가를 입력하세요(원):`, curp?Math.round(curp):"");
-  if(ans===null) return;
-  const exit=+(""+ans).replace(/[,₩\s]/g,""); if(!(exit>0)){alert("매도가를 올바르게 입력하세요.");return;}
-  const xdate=prompt("매도일 (YYYY-MM-DD):", DATA.meta.asof)||DATA.meta.asof;
-  const cost=h.entry_price*h.shares, proceeds=exit*h.shares;
-  tradelog.push({ticker:tk, name:m.name||tk, entry_date:h.entry_date, entry_price:h.entry_price,
-    exit_date:xdate, exit_price:exit, shares:h.shares, cost, proceeds,
-    pnl:proceeds-cost, ret:exit/h.entry_price-1, days:holdingDays(h.entry_date)});
-  holdings=holdings.filter(x=>!(x.ticker===tk&&x.entry_date===date));
-  save();renderHoldInput();render();
+// ---- 매수/매도 팝업(모달) ----
+function closeModal(){ document.querySelectorAll(".modalOv").forEach(o=>o.remove()); }
+function openModal(html){ closeModal(); const ov=document.createElement("div"); ov.className="modalOv";
+  ov.innerHTML=`<div class="modalBox">${html}</div>`;
+  ov.addEventListener("click",e=>{ if(e.target===ov) closeModal(); }); document.body.appendChild(ov); return ov; }
+window.closeModal=closeModal;
+const _tickStepper=(id)=>`<span class="tickwrap"><button type="button" class="tickbtn" onclick="stepEl(document.getElementById('${id}'),-1)">−</button><input id="${id}" type="number" inputmode="numeric" style="width:120px;text-align:right"><button type="button" class="tickbtn" onclick="stepEl(document.getElementById('${id}'),1)">+</button></span>`;
+// 매수 팝업 — 종목 발굴에서 종목 클릭
+window.buyPopup=function(tk){
+  const m=meta(tk); if(!m){return;}
+  openModal(`<h3 style="margin:0 0 4px">매수 — ${esc(m.name||tk)} <span class="mono">${tk}</span></h3>
+    <div class="sub" style="margin-bottom:14px">현재가 ${W(m.cur)} · 호가단위 ${tickSize(m.cur||0).toLocaleString()}원</div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end">
+      <div><label class="sub" style="display:block;margin-bottom:4px">매수가(원)</label>${_tickStepper("mPrice")}</div>
+      <div><label class="sub" style="display:block;margin-bottom:4px">수량(주)</label><input id="mQty" type="number" placeholder="주" style="width:90px"></div>
+      <div><label class="sub" style="display:block;margin-bottom:4px">매수일</label><input id="mDate" type="date" value="${DATA.meta.asof}" style="width:150px"></div></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+      <button class="btn ghost" onclick="closeModal()">취소</button>
+      <button class="btn" onclick="buyConfirm('${tk}')">매수 추가</button></div>`);
+  const pe=document.getElementById("mPrice"); if(pe&&m.cur) pe.value=snapTick(m.cur);
+  setTimeout(()=>{const q=document.getElementById("mQty");if(q)q.focus();},60);
 };
+window.buyConfirm=function(tk){
+  const m=meta(tk);
+  const price=snapTick(+document.getElementById("mPrice").value||0), shares=+document.getElementById("mQty").value||0;
+  const date=document.getElementById("mDate").value||DATA.meta.asof;
+  if(!(price>0)){alert("매수가를 입력하세요.");return;}
+  if(!(shares>0)){alert("수량을 입력하세요.");return;}
+  holdings.push({ticker:tk,entry_date:date,entry_price:price,shares}); save(); closeModal();
+  renderHoldInput(); render();
+  const t=document.querySelector('#tabs .tab[data-panel="portfolio"]'); if(t) t.click();
+};
+// 매도 팝업 — 보유 종목 클릭 (부분 매도 가능). 청산 거래(일지)에 실현손익 누적.
+window.sellPopup=function(tk,date){
+  const h=holdings.find(x=>x.ticker===tk&&x.entry_date===date); if(!h){return;}
+  const m=meta(tk), px=m.cur?snapTick(m.cur):h.entry_price;
+  openModal(`<h3 style="margin:0 0 4px">매도 — ${esc(m.name||tk)} <span class="mono">${tk}</span></h3>
+    <div class="sub" style="margin-bottom:14px">보유 ${h.shares}주 · 진입 ${W(h.entry_price)} (${h.entry_date}) · 현재가 ${W(m.cur)} · 호가단위 ${tickSize(m.cur||h.entry_price).toLocaleString()}원</div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end">
+      <div><label class="sub" style="display:block;margin-bottom:4px">매도가(원)</label>${_tickStepper("sPrice")}</div>
+      <div><label class="sub" style="display:block;margin-bottom:4px">수량(주)</label><input id="sQty" type="number" value="${h.shares}" style="width:90px"></div>
+      <div><label class="sub" style="display:block;margin-bottom:4px">매도일</label><input id="sDate" type="date" value="${DATA.meta.asof}" style="width:150px"></div></div>
+    <div id="sPnl" class="sub" style="margin-top:10px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn ghost" onclick="closeModal()">취소</button>
+      <button class="btn" onclick="sellConfirm('${tk}','${date}')">매도</button></div>`);
+  const sp=document.getElementById("sPrice"); if(sp) sp.value=px;
+  const upd=()=>{ const ex=+document.getElementById("sPrice").value||0, q=Math.min(h.shares,+document.getElementById("sQty").value||0);
+    const pnl=(ex-h.entry_price)*q, el=document.getElementById("sPnl");
+    if(el) el.innerHTML=`예상 실현손익 <b class="${pnl>=0?'pos':'neg'}">${W(pnl)} (${P(h.entry_price?ex/h.entry_price-1:0)})</b>${q<h.shares?` · 부분매도(잔여 ${h.shares-q}주)`:''}`; };
+  ["sPrice","sQty"].forEach(id=>{const e=document.getElementById(id); if(e)e.addEventListener("input",upd);}); upd();
+};
+window.sellConfirm=function(tk,date){
+  const h=holdings.find(x=>x.ticker===tk&&x.entry_date===date); if(!h) return;
+  const m=meta(tk), exit=snapTick(+document.getElementById("sPrice").value||0);
+  let q=Math.min(h.shares,Math.max(0,+document.getElementById("sQty").value||0));
+  const xdate=document.getElementById("sDate").value||DATA.meta.asof;
+  if(!(exit>0)){alert("매도가를 입력하세요.");return;}
+  if(!(q>0)){alert("수량을 입력하세요.");return;}
+  const cost=h.entry_price*q, proceeds=exit*q;
+  tradelog.push({ticker:tk,name:m.name||tk,entry_date:h.entry_date,entry_price:h.entry_price,
+    exit_date:xdate,exit_price:exit,shares:q,cost,proceeds,pnl:proceeds-cost,ret:exit/h.entry_price-1,days:holdingDays(h.entry_date)});
+  if(q>=h.shares) holdings=holdings.filter(x=>!(x.ticker===tk&&x.entry_date===date)); else h.shares-=q;
+  save(); closeModal(); renderHoldInput(); render();
+};
+window.recordSell=function(tk,date){ sellPopup(tk,date); };   // 호환
 // 청산 기록 되돌리기(오입력) → 다시 보유로
 window.undoSell=function(i){ const t=tradelog[i]; if(!t) return;
   if(!confirm(`'${t.name}' 청산 기록을 취소하고 보유로 되돌릴까요?`)) return;
   holdings.push({ticker:t.ticker,entry_date:t.entry_date,entry_price:t.entry_price,shares:t.shares});
   tradelog.splice(i,1); save(); renderHoldInput(); render(); };
-// 현금 입금/출금 (원금 변동)
-window.addCashflow=function(sign){
-  const v=+(document.getElementById("cfAmt").value||0); if(!(v>0)){alert("금액을 입력하세요.");return;}
-  const d=document.getElementById("cfDate").value||DATA.meta.asof;
-  cashflows.push({date:d, amount:sign*v, note:sign>0?"입금":"출금"});
-  document.getElementById("cfAmt").value=""; save(); renderCashflows(); render();
-};
-window.delCashflow=function(i){ if(cashflows[i] && cashflows[i].initial){alert("초기 투입은 '현금 투자액' 입력란에서 수정하세요.");return;}
-  cashflows.splice(i,1); save(); renderCashflows(); render(); };
-function renderCashflows(){
-  const el=document.getElementById("cfList"); if(!el) return;
-  const extra=cashflows.filter(c=>!c.initial);
-  el.innerHTML = extra.length ? '입출금 내역: '+extra.map((c)=>{const gi=cashflows.indexOf(c);
-    return `<span class="chip">${c.date} ${c.amount>0?'+':''}${W(c.amount)} <a href="#" onclick="delCashflow(${gi});return false" style="color:#f0584c">×</a></span>`;}).join(" ") : '';
-}
 // 페이퍼 매매 일지 — 청산 거래 표 + 실적 통계
 function renderPaperLog(){
   const tb=document.getElementById("logTable"), st=document.getElementById("logStats"), sub=document.getElementById("logSub");
   if(!tb) return;
   const n=tradelog.length;
-  if(!n){ tb.innerHTML='<div class="empty">아직 청산 기록이 없습니다. 보유 카드의 「매도 기록」으로 매도를 기록하세요.</div>';
+  if(!n){ tb.innerHTML='<div class="empty">아직 청산 기록이 없습니다. 보유 종목을 클릭해 「매도」하면 기록됩니다.</div>';
     st.innerHTML=''; if(sub) sub.textContent=''; return; }
   const wins=tradelog.filter(t=>t.pnl>0).length, totPnl=tradelog.reduce((a,t)=>a+t.pnl,0);
   const avgRet=tradelog.reduce((a,t)=>a+t.ret,0)/n, avgDays=tradelog.reduce((a,t)=>a+(t.days||0),0)/n;
@@ -946,9 +1029,10 @@ suggEl.addEventListener("click",e=>{const d=e.target.closest("div[data-tk]");if(
 document.addEventListener("click",e=>{if(!e.target.closest("#searchWrap"))suggEl.style.display="none";});
 document.getElementById("addBtn").addEventListener("click",addHolding);
 // 탭 전환
-document.querySelectorAll("#tabs .tab").forEach(t=>t.addEventListener("click",()=>{
-  document.querySelectorAll("#tabs .tab").forEach(x=>x.classList.toggle("active",x===t));
-  const p=t.dataset.panel;
+const TAB_ORDER=["portfolio","discover","sim","backtest","strategy"];
+function activateTab(p){
+  if(!TAB_ORDER.includes(p)) return;
+  document.querySelectorAll("#tabs .tab").forEach(x=>x.classList.toggle("active",x.dataset.panel===p));
   document.querySelectorAll(".panel").forEach(pn=>pn.classList.toggle("active",pn.id==="panel-"+p));
   try{ window.scrollTo(0,0); }catch(e){}
   // 탭이 보이게 된 뒤 차트 재그리기(숨은 패널은 clientWidth 0이라 안 그려짐)
@@ -956,21 +1040,20 @@ document.querySelectorAll("#tabs .tab").forEach(t=>t.addEventListener("click",()
     try{ paintCharts(); }catch(e){}
     if(p==="sim" && simData && simData.active) try{ drawSimChart(simData.equity_curve||[], simData.investment, "simChart"); }catch(e){}
   }, 40);
-}));
+}
+document.querySelectorAll("#tabs .tab").forEach(t=>t.addEventListener("click",()=>activateTab(t.dataset.panel)));
 // ---- 매수가 호가단위(틱) 조정: 버튼·키보드·휠·모바일 드래그 ----
-function tickSize(p){ p=+p||0;
-  if(p<2000) return 1; if(p<5000) return 5; if(p<20000) return 10; if(p<50000) return 50;
-  if(p<200000) return 100; if(p<500000) return 500; return 1000; }   // KRX 호가가격단위(2023 개편)
+function tickSize(p){ p=+p||0;   // KRX 호가가격단위
+  if(p<1000) return 1; if(p<5000) return 5; if(p<10000) return 10; if(p<50000) return 50;
+  if(p<100000) return 100; if(p<500000) return 500; return 1000; }
 function snapTick(p){ const t=tickSize(p); return Math.max(0, Math.round((+p||0)/t)*t); }
-function stepPrice(ticks){
-  const el=document.getElementById("price"); let p=Math.round(+el.value||0);
-  const dir=ticks>=0?1:-1; let nleft=Math.abs(ticks);
-  while(nleft-->0){
-    const t=tickSize(dir>0?p:Math.max(0,p-1));
-    p = dir>0 ? Math.floor(p/t)*t+t : Math.ceil(p/t)*t-t;
-    if(p<0){p=0;break;}
-  }
-  el.value=snapTick(p); updTickLbl(); }
+function stepEl(el, ticks){   // 임의 입력칸에 호가 1틱 단위 가감(경계 전환 처리)
+  if(!el) return; let p=Math.round(+el.value||0);
+  const dir=ticks>=0?1:-1; let n=Math.abs(ticks);
+  while(n-->0){ const t=tickSize(dir>0?p:Math.max(0,p-1));
+    p = dir>0 ? Math.floor(p/t)*t+t : Math.ceil(p/t)*t-t; if(p<0){p=0;break;} }
+  el.value=snapTick(p); try{ el.dispatchEvent(new Event("input")); }catch(e){} }
+function stepPrice(ticks){ stepEl(document.getElementById("price"), ticks); updTickLbl(); }
 function updTickLbl(){ const p=+document.getElementById("price").value||0;
   const l=document.getElementById("tickLbl"); if(l) l.textContent=p>0?`(1틱 ${tickSize(p).toLocaleString()}원)`:""; }
 (function(){
@@ -991,7 +1074,6 @@ function updTickLbl(){ const p=+document.getElementById("price").value||0;
 function initialCf(){ let c=cashflows.find(x=>x.initial); if(!c){ c={date:DATA.meta.asof,amount:0,note:"초기 투입",initial:true}; cashflows.unshift(c);} return c; }
 document.getElementById("capital").value=initialCf().amount;
 document.getElementById("capital").addEventListener("change",e=>{initialCf().amount=+e.target.value||0;save();render();});
-document.getElementById("cfDate").value=DATA.meta.asof;
 document.getElementById("bdate").value=DATA.meta.asof;
 document.getElementById("foot").innerHTML=`데이터: KRX 공식 API 종가(EOD), 매 거래일 갱신. 신호는 기준일 종가로 계산하고 집행은 다음 거래일 시가를 가정합니다. 보유·자본·매매일지는 이 브라우저에 저장되며, 구글 로그인 시 본인 서버에 동기화되어 기기 간 동일하게 보입니다.<br>검증: 전략 성과는 상장폐지 포함 PIT 패널로 검증(생존편향 제거, 위 카드). 단 라이브 후보는 현재 상장 종목에서 선정되고, 레짐 의존(2018·2019·2022·2024 음)이며 MDD가 깊어 서킷브레이커로 한도 관리합니다. 개별 종목의 수익은 보장하지 않습니다. 생성 ${DATA.meta.generated}`;
 renderHoldInput();render();
