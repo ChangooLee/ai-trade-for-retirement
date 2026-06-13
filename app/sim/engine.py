@@ -80,21 +80,35 @@ def execute_day(state, day, sig):
         keep.append(p)
     positions = keep
 
-    # 2) 서킷브레이커 (당월 손익 ≤ −3%×투자금)
+    # 2) 서킷브레이커 (당월 손익 ≤ −limit×투자금). 모드: block=신규매수만 중단 / liq=전량청산 후 그달 중단.
     eq_now, _ = _equity(cash, positions, sig)
     cur_pnl = eq_now - inv
     cb_limit = float(state.get("cb_limit", CB_LIMIT))      # 사용자 조정 가능(공격성). 0 또는 None이면 끔.
+    cb_mode = state.get("cb_mode", "block")                # 워크포워드 검증: liq(전량청산)가 block보다 견고히 우위
     cb_month = state.get("cb_month")
     cb_base = state.get("cb_base_pnl", 0.0)
     mon = day[:7]
     if cb_month != mon:                 # 새 달 → 월초 손익 기준 갱신
         cb_month, cb_base = mon, cur_pnl
     tripped = (cb_limit > 0) and ((cur_pnl - cb_base) <= -cb_limit * inv)
+    cb_liq_month = state.get("cb_liq_month")              # liqsoft가 '그달 이미 청산했는지' 추적
+    just_liq = False
+    # liq=전량청산 후 그달 내내 현금 / liqsoft=그달 1회만 청산하고 다음날부터 정상 재진입(덜 거침)
+    if tripped and cb_mode in ("liq", "liqsoft") and positions and (cb_mode == "liq" or cb_liq_month != mon):
+        for p in list(positions):
+            px = _price(sig, p["ticker"], p.get("last_price") or p["entry_price"])
+            held = _trading_days_between(cal, p["entry_date"], day)
+            cash += _record_sell(p, p["shares"], px, held, "브레이커청산")
+        positions = []; just_liq = True
+        if cb_mode == "liqsoft":
+            cb_liq_month = mon
+    # 매수 차단: block/liq=발동 동안 차단 / liqsoft=청산한 그날만 차단(이후 정상 재진입) / none=차단 없음
+    blocked = tripped if cb_mode in ("block", "liq") else (just_liq if cb_mode == "liqsoft" else False)
 
-    # 3) 매수 (미발동 & 슬롯 여유)
+    # 3) 매수 (미차단 & 슬롯 여유)
     slots = int(sig.get("exposure", {}).get("slots", 0))
     weight = float(sig.get("exposure", {}).get("weight", 0.0))
-    if not tripped and slots > len(positions) and weight > 0:
+    if not blocked and slots > len(positions) and weight > 0:
         held_tk = {p["ticker"] for p in positions}
         for c in sig.get("buy_order", []):
             if len(positions) >= slots:
@@ -116,12 +130,14 @@ def execute_day(state, day, sig):
     # 4) 평가
     equity, hv = _equity(cash, positions, sig)
     new_state = {"investment": inv, "cash": round(cash, 2), "positions": positions,
-                 "cb_month": cb_month, "cb_base_pnl": cb_base, "cb_limit": cb_limit}
+                 "cb_month": cb_month, "cb_base_pnl": cb_base, "cb_limit": cb_limit, "cb_mode": cb_mode,
+                 "cb_liq_month": cb_liq_month}
     result = {"date": day, "equity": round(equity), "cash": round(cash), "holdings_value": round(hv),
               "trades": trades, "tripped": tripped, "n_positions": len(positions)}
     return new_state, result
 
 
-def new_state(investment, cb_limit=CB_LIMIT):
+def new_state(investment, cb_limit=CB_LIMIT, cb_mode="block"):
     return {"investment": float(investment), "cash": float(investment), "positions": [],
-            "cb_month": None, "cb_base_pnl": 0.0, "cb_limit": float(cb_limit)}
+            "cb_month": None, "cb_base_pnl": 0.0, "cb_limit": float(cb_limit), "cb_mode": cb_mode,
+            "cb_liq_month": None}

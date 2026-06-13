@@ -137,8 +137,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(400, {"error": "파라미터 오류"})
         if not (10000 <= cap <= 100_000_000_000):
             return self._send(400, {"error": "투자금 범위 오류"})
+        cb_mode = "liq" if g("cb_mode", "block") == "liq" else "block"
         cmd = [sys.executable, "-m", "app.sim.backtest_cli", "--start", start, "--end", end,
-               "--capital", str(cap), "--exposure-mult", str(mult), "--cb-limit", str(cb)]
+               "--capital", str(cap), "--exposure-mult", str(mult), "--cb-limit", str(cb), "--cb-mode", cb_mode]
         try:
             p = subprocess.run(cmd, cwd=os.path.join(ROOT, ".."), capture_output=True, text=True, timeout=60)
             lines = [ln for ln in (p.stdout or "").splitlines() if ln.strip()]
@@ -190,8 +191,12 @@ class Handler(BaseHTTPRequestHandler):
                 return max(lo, min(hi, v))
             cb_limit = _num("cb_limit", 0.03, 0.0, 0.20)         # 0=끔 ~ 20%
             exposure_mult = _num("exposure_mult", 1.0, 0.5, 2.5)  # 공격성 배수
+            _mode = data.get("cb_mode")
+            if _mode is None and cur is not None:
+                _mode = cur.get("cb_mode")
+            cb_mode = "liq" if _mode == "liq" else "block"        # 청산 방식: block(신규중단) | liq(전량청산)
             db.start_sim(sub, info.get("email", ""), inv, _latest_asof(),
-                         cb_limit=cb_limit, exposure_mult=exposure_mult)
+                         cb_limit=cb_limit, exposure_mult=exposure_mult, cb_mode=cb_mode)
             return self._send(200, db.results(sub) or {"active": True})
         except Exception as e:
             return self._send(500, {"error": str(e)})

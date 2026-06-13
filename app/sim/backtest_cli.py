@@ -17,7 +17,7 @@ DAYS_PATH = os.path.join(_REPO, "state", "bt_days.json")
 PRICES_PATH = os.path.join(_REPO, "state", "bt_prices.parquet")
 
 
-def run(start, end, capital, exposure_mult, cb_limit):
+def run(start, end, capital, exposure_mult, cb_limit, cb_mode="block"):
     arch = json.load(open(DAYS_PATH, encoding="utf-8"))
     sizing = arch.get("sizing", {})
     maxpos = int(sizing.get("max_positions", 15)); baseslot = float(sizing.get("base_slot_weight", 0.05))
@@ -29,7 +29,7 @@ def run(start, end, capital, exposure_mult, cb_limit):
     days = sorted(d for d in arch["days"].keys() if start <= d <= end)
     if not days:
         return {"error": "해당 기간에 데이터가 없습니다."}
-    st = engine.new_state(capital, cb_limit=cb_limit)
+    st = engine.new_state(capital, cb_limit=cb_limit, cb_mode=cb_mode)
     eq_curve = []; trips = 0; all_trades = []
     for d in days:
         rec = arch["days"][d]; pr = prices_by_date.get(d, {})
@@ -50,7 +50,7 @@ def run(start, end, capital, exposure_mult, cb_limit):
     open_pos = st["positions"]
     return {
         "summary": {"start": days[0], "end": days[-1], "days": len(days), "capital": capital,
-                    "exposure_mult": exposure_mult, "cb_limit": cb_limit,
+                    "exposure_mult": exposure_mult, "cb_limit": cb_limit, "cb_mode": cb_mode,
                     "final_equity": round(final), "total_pnl": round(final - capital),
                     "total_ret": final / capital - 1, "mdd": mdd, "trips": trips,
                     "n_trades": len(all_trades), "win_rate": (wins / len(all_trades)) if all_trades else 0.0,
@@ -66,9 +66,10 @@ def main():
     ap.add_argument("--capital", type=float, default=10_000_000)
     ap.add_argument("--exposure-mult", type=float, default=1.0)
     ap.add_argument("--cb-limit", type=float, default=0.03)
+    ap.add_argument("--cb-mode", default="block", choices=["block", "liq", "liqsoft"])
     a = ap.parse_args()
     try:
-        out = run(a.start, a.end, a.capital, max(0.5, min(2.5, a.exposure_mult)), max(0.0, min(0.20, a.cb_limit)))
+        out = run(a.start, a.end, a.capital, max(0.5, min(2.5, a.exposure_mult)), max(0.0, min(0.20, a.cb_limit)), a.cb_mode)
     except FileNotFoundError:
         out = {"error": "아카이브가 아직 생성되지 않았습니다(build_bt_archive 필요)."}
     except Exception as e:

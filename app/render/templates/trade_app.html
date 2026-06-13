@@ -38,6 +38,7 @@ canvas{width:100%;height:150px;display:block;background:var(--panel);border:1px 
 .cl{font-size:10.5px;color:var(--mut);margin:2px 0}.cl b{margin:0 2px}
 .plan{display:grid;grid-template-columns:1fr 1fr;gap:5px 16px;margin:8px 0;font-size:12.5px;background:var(--panel);border-radius:8px;padding:10px 12px}
 .plan b{font-size:13px;color:var(--ink)}.sub{color:var(--mut);font-size:10.5px}.pos{color:var(--up)}.neg{color:var(--down)}
+.pldot{font-size:9px;vertical-align:middle;margin-right:6px;line-height:1}
 .form{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
 .form label{font-size:11px;color:var(--mut);display:block;margin-bottom:4px;font-weight:500}
 .form input,.form select,select,input[type=date],input[type=number]{background:var(--card);border:1px solid var(--line2);color:var(--ink);border-radius:8px;padding:8px 11px;font-size:13px;font-family:inherit}
@@ -196,6 +197,7 @@ details{margin-top:6px}summary{cursor:pointer;color:var(--ink2);font-size:12.5px
   <div><label>투자금액(원)</label><input id="btCap" type="number" value="10000000" style="width:140px"></div>
   <div><label>노출(공격성)</label><select id="btMult"><option value="1.0">기본 ×1.0</option><option value="1.5">적극 ×1.5</option><option value="2.0">공격 ×2.0</option><option value="2.5">최대 ×2.5</option></select></div>
   <div><label>월 손실한도</label><select id="btCb"><option value="0.03">−3%</option><option value="0.05">−5%</option><option value="0.08">−8%</option><option value="0">끔</option></select></div>
+  <div><label>한도 도달 시</label><select id="btMode"><option value="block">신규매수 중단</option><option value="liq">전량청산</option></select></div>
   <button class="btn" onclick="runBacktest()">백테스트 실행</button>
 </div>
 <div id="btResult"></div>
@@ -424,7 +426,7 @@ function renderSimCard(d, opts){
   }
   const lbl = ro ? "<span class='sub'>(마지막 저장)</span>" : "";
   el.innerHTML=`<div class="card">
-    <div class="hd"><b>운영 중</b> <span class="mono">시작 ${d.start_date} · 최근처리 ${d.last_processed||'대기'} · ${days}거래일 · 공격성 ${aggr}(×${d.exposure_mult}) · 한도 ${d.cb_limit>0?'−'+Math.round(d.cb_limit*100)+'%':'끔'}${acct}</span>
+    <div class="hd"><b>운영 중</b> <span class="mono">시작 ${d.start_date} · 최근처리 ${d.last_processed||'대기'} · ${days}거래일 · 공격성 ${aggr}(×${d.exposure_mult}) · 한도 ${d.cb_limit>0?'−'+Math.round(d.cb_limit*100)+'%'+((d.cb_mode||'block')==='liq'?' 전량청산':' 신규중단'):'끔'}${acct}</span>
       ${ctrl}</div>
     ${banner}
     <div class="summary-row">
@@ -454,10 +456,11 @@ window.runBacktest=async ()=>{
   const start=document.getElementById("btStart").value, end=document.getElementById("btEnd").value;
   const cap=+document.getElementById("btCap").value||10000000;
   const mult=document.getElementById("btMult").value, cb=document.getElementById("btCb").value;
+  const mode=document.getElementById("btMode").value;
   if(!start||!end||start>=end){ alert("시작일이 종료일보다 빨라야 합니다."); return; }
   el.innerHTML='<div class="note">백테스트 실행 중… (몇 초 소요)</div>';
   try{
-    const q=`?start=${start}&end=${end}&capital=${cap}&exposure_mult=${mult}&cb_limit=${cb}`;
+    const q=`?start=${start}&end=${end}&capital=${cap}&exposure_mult=${mult}&cb_limit=${cb}&cb_mode=${mode}`;
     const r=await fetch("/trading/api/backtest"+q);
     const d=await r.json();
     if(!r.ok||d.error){ el.innerHTML=`<div class="warn">백테스트 실패: ${esc(d.error||('HTTP '+r.status))}</div>`; return; }
@@ -467,7 +470,7 @@ window.runBacktest=async ()=>{
         <div>기간<b>${s.start}~${s.end} (${s.days}거래일)</b></div><div>투자금<b>${W(s.capital)}</b></div>
         <div>최종 평가자산<b>${W(s.final_equity)}</b></div><div>총손익<b class="${cls}">${W(s.total_pnl)} (${P(s.total_ret)})</b></div>
         <div>MDD<b class="neg">${P(s.mdd)}</b></div><div>체결<b>${s.n_trades}건 · 승률 ${Math.round(s.win_rate*100)}%</b></div>
-        <div>설정<b>노출 ×${s.exposure_mult} · 한도 ${s.cb_limit>0?'−'+Math.round(s.cb_limit*100)+'%':'끔'}</b></div></div>
+        <div>설정<b>노출 ×${s.exposure_mult} · 한도 ${s.cb_limit>0?'−'+Math.round(s.cb_limit*100)+'%':'끔'}${s.cb_limit>0?(s.cb_mode==='liq'?' 전량청산':' 신규중단'):''}</b></div></div>
       <canvas id="btChart" style="width:100%;height:130px;margin-top:8px"></canvas>
       ${s.n_trades?`<div style="margin-top:8px"><b class="sub">체결 내역${s.n_trades>200?' (최근 200건)':''}</b>
         <table><thead><tr><th>종목</th><th>진입→청산</th><th class="num">매수→매도가</th><th class="num">수량</th><th class="num">손익</th><th class="num">수익률</th><th>사유</th></tr></thead><tbody>`+
@@ -480,23 +483,26 @@ window.simStartForm=function(prefill, otherAcct){
   const el=document.getElementById("simSection"); if(!el) return;
   const d = (prefill && simData) ? simData : null;
   const inv = d ? d.investment : (DATA.initial_capital||10000000);
-  const mult = d ? d.exposure_mult : 1.0, cb = d ? d.cb_limit : 0.03;
+  const mult = d ? d.exposure_mult : 1.0, cb = d ? d.cb_limit : 0.03, mode = d ? (d.cb_mode||"block") : "block";
   const opt=(v,cur,lab)=>`<option value="${v}" ${(+cur===+v)?'selected':''}>${lab}</option>`;
+  const sopt=(v,cur,lab)=>`<option value="${v}" ${cur===v?'selected':''}>${lab}</option>`;
   const otherNote = otherAcct ? `<div class="warn" style="border-left-color:#e0a93b"><b>다른 계정(${esc(otherAcct)})에 진행 중인 시뮬레이터</b>가 있습니다. 그 시뮬을 보려면 우측 상단에서 해당 구글 계정으로 로그인하세요. 시뮬레이터는 <b>구글 계정별로</b> 저장됩니다.</div>` : "";
   el.innerHTML=`<div class="card">${otherNote}<div class="hd"><b>시뮬레이션 ${d?'설정 변경·재시작':'시작'} · 공격성 설정</b>${d?' <span class="sub">시작 시 기존 시뮬 기록 초기화</span>':''}</div>
     <div class="srow" style="gap:10px;align-items:center;flex-wrap:wrap">
       <label>투자금액(원)</label><input id="simInv" type="number" value="${Math.round(inv)}" style="width:140px">
       <label>노출(공격성)</label><select id="simMult">${opt(1.0,mult,"기본 ×1.0 (노출 40%대)")}${opt(1.5,mult,"적극 ×1.5")}${opt(2.0,mult,"공격 ×2.0 (≈풀투자)")}${opt(2.5,mult,"최대 ×2.5")}</select>
       <label>월 손실한도</label><select id="simCb">${opt(0.03,cb,"−3% (권장)")}${opt(0.05,cb,"−5%")}${opt(0.08,cb,"−8%")}${opt(0,cb,"끔")}</select>
+      <label>한도 도달 시</label><select id="simMode">${sopt("block",mode,"신규매수 중단 (기본)")}${sopt("liq",mode,"전량청산")}</select>
       <button class="btn" style="background:#f6f7f8;border-color:#5b94f0" onclick="simStart()">시작</button>${d?' <a href="#" class="sub" style="color:#8b8f97" onclick="renderSim();return false">취소</a>':''}</div>
-    <div class="sub" style="margin-top:6px">노출↑일수록 수익·낙폭 모두 커집니다 (2026 백테스트 ₩1천만: 기본 +7%/MDD−8% · 공격×2.0 +22%/MDD−17%). <b>서킷브레이커만 풀면 공격성 효과 없음</b> — 노출이 실제 레버. 월 손실한도는 고노출에서 낙폭을 줄여줍니다(−3% 권장).</div></div>`;
+    <div class="sub" style="margin-top:6px">노출↑일수록 수익·낙폭 모두 커집니다. 월 손실한도 도달 시 <b>신규매수 중단</b>(보유 유지) vs <b>전량청산</b>(다 팔고 그달 쉼). 엔진 백테스트상 대체로 <b>신규중단이 수익이 높고 MDD는 비슷</b>했고, 급반등 직후(2023 등)엔 전량청산이 낙폭을 줄였습니다. <b>백테스트 탭에서 직접 비교</b>해 보세요(과거치·미래 보장 아님). 기본=신규중단.</div></div>`;
 };
 window.simStart=async ()=>{
   const inv=+(document.getElementById("simInv").value||0);
   if(!(inv>=10000)){ alert("투자금액을 입력하세요(최소 1만원)."); return; }
   const exposure_mult=+(document.getElementById("simMult").value||1);
   const cb_limit=+(document.getElementById("simCb").value||0.03);
-  try{ const r=await fetch(SIM_API+"/start",{method:"POST",headers:{Authorization:"Bearer "+idToken,"Content-Type":"application/json"},body:JSON.stringify({investment:inv,exposure_mult,cb_limit})});
+  const cb_mode=document.getElementById("simMode").value||"block";
+  try{ const r=await fetch(SIM_API+"/start",{method:"POST",headers:{Authorization:"Bearer "+idToken,"Content-Type":"application/json"},body:JSON.stringify({investment:inv,exposure_mult,cb_limit,cb_mode})});
     if(r.status===401){ clearSession(); alert("다시 로그인해주세요."); return; }
     if(!r.ok){ alert("시작 실패 ("+r.status+")"); return; }
     simData=await r.json(); renderSim();
@@ -765,7 +771,7 @@ function render(){
   const hc=[], sc=[];
   pf.open.forEach(h=>{
     if(!h.analyzed){   // 유니버스 외 — 가격·손익만 추적
-      hc.push(`<div class="card hold" style="cursor:pointer" onclick="sellPopup('${h.ticker}','${h.entry_date}')"><div class="hd"><b>${esc(h.name||h.ticker)}</b> <span class="mono">${h.ticker}·${h.market||''}</span>
+      hc.push(`<div class="card hold" style="cursor:pointer" onclick="sellPopup('${h.ticker}','${h.entry_date}')"><div class="hd"><span class="pldot ${h.ret>=0?'pos':'neg'}" title="${h.ret>=0?'수익 중':'손실 중'}">●</span><b>${esc(h.name||h.ticker)}</b> <span class="mono">${h.ticker}·${h.market||''}</span>
         <span class="pill hold">유니버스 외 · ${(h.weight*100).toFixed(1)}%</span>
         <button class="btn" onclick="event.stopPropagation();sellPopup('${h.ticker}','${h.entry_date}')">매도</button>
         <button class="btn x" onclick="event.stopPropagation();del('${h.ticker}','${h.entry_date}')">삭제</button></div>
@@ -788,7 +794,7 @@ function render(){
       : caution ? `<div class="srow"><b style="color:#e0a93b">변동성 주의(참고·보유) — 위상 고위험(상위 ${Math.round(h.tda.risk_pct*100)}%)${downtrend?' · 추세 하향':''}. <span class="sub">TDA 청산은 백테스트상 수익을 깎아 매도 트리거로 쓰지 않음 — 변동성 인지용</span></b></div>` : "";
     const tdaLine = h.tda ? `<div>TDA 위상리스크 <b class="${caution&&downtrend?'neg':''}">${h.tda.risk>=0?'+':''}${h.tda.risk}</b> <span class="sub">상위 ${Math.round(h.tda.risk_pct*100)}% 위험${trd} (참고)</span></div>` : "";
     const card=`<div class="card ${cls}" style="cursor:pointer" onclick="sellPopup('${h.ticker}','${h.entry_date}')">
-      <div class="hd"><b>${esc(h.name||h.ticker)}</b> <span class="mono">${h.ticker}·${h.market||''}·${h.sector||''}</span>
+      <div class="hd"><span class="pldot ${h.ret>=0?'pos':'neg'}" title="${h.ret>=0?'수익 중':'손실 중'}">●</span><b>${esc(h.name||h.ticker)}</b> <span class="mono">${h.ticker}·${h.market||''}·${h.sector||''}</span>
         <span class="pill ${pill}">${h.status} · ${(h.weight*100).toFixed(1)}%</span>
         <button class="btn" onclick="event.stopPropagation();sellPopup('${h.ticker}','${h.entry_date}')">매도</button>
         <button class="btn x" onclick="event.stopPropagation();del('${h.ticker}','${h.entry_date}')">삭제</button></div>
