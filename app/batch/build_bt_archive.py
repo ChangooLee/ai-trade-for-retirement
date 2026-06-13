@@ -19,9 +19,17 @@ from app.indicators.regime import compute_d4_exposure  # noqa: E402
 from app.indicators.leader import compute_leader_flags  # noqa: E402
 from app.indicators.pullback import compute_pullback_flags  # noqa: E402
 from app.data import krx_loader as L  # noqa: E402
-from backtest.pit_mktcap_backtest import load_adjusted  # noqa: E402
 
 _REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def _load_daily(cfg):
+    """가격 패널: 가능하면 PIT 조정가(생존편향 제거, 로컬 백필) · 없으면 라이브 daily_ohlcv(서버 증분)."""
+    try:
+        from backtest.pit_mktcap_backtest import load_adjusted
+        return load_adjusted()
+    except Exception:
+        return L.load_daily_ohlcv(cfg["paths"]["daily_ohlcv"])
 DAYS_PATH = os.path.join(_REPO, "state", "bt_days.json")
 PRICES_PATH = os.path.join(_REPO, "state", "bt_prices.parquet")
 
@@ -33,7 +41,7 @@ def main():
     cfg = yaml.safe_load(open("config/strategy.yaml", encoding="utf-8"))
     mc, ml = cfg["universe"]["min_close"], cfg["universe"]["min_listing_days"]
     liq = cfg["universe"].get("min_trdval", 5e8); top_n = cfg["universe"]["top_n"]
-    daily = load_adjusted(); index = L.load_index_ohlcv(cfg["paths"]["index_ohlcv"])
+    daily = _load_daily(cfg); index = L.load_index_ohlcv(cfg["paths"]["index_ohlcv"])
     t0 = time.time()
     di = add_daily_indicators(daily)
     wk = add_weekly_indicators(to_weekly(daily), cfg["pullback"]["weekly_ma"], cfg["pullback"]["low_band"])
