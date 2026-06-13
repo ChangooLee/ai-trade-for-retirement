@@ -83,12 +83,13 @@ def execute_day(state, day, sig):
     # 2) 서킷브레이커 (당월 손익 ≤ −3%×투자금)
     eq_now, _ = _equity(cash, positions, sig)
     cur_pnl = eq_now - inv
+    cb_limit = float(state.get("cb_limit", CB_LIMIT))      # 사용자 조정 가능(공격성). 0 또는 None이면 끔.
     cb_month = state.get("cb_month")
     cb_base = state.get("cb_base_pnl", 0.0)
     mon = day[:7]
     if cb_month != mon:                 # 새 달 → 월초 손익 기준 갱신
         cb_month, cb_base = mon, cur_pnl
-    tripped = (cur_pnl - cb_base) <= -CB_LIMIT * inv
+    tripped = (cb_limit > 0) and ((cur_pnl - cb_base) <= -cb_limit * inv)
 
     # 3) 매수 (미발동 & 슬롯 여유)
     slots = int(sig.get("exposure", {}).get("slots", 0))
@@ -115,12 +116,12 @@ def execute_day(state, day, sig):
     # 4) 평가
     equity, hv = _equity(cash, positions, sig)
     new_state = {"investment": inv, "cash": round(cash, 2), "positions": positions,
-                 "cb_month": cb_month, "cb_base_pnl": cb_base}
+                 "cb_month": cb_month, "cb_base_pnl": cb_base, "cb_limit": cb_limit}
     result = {"date": day, "equity": round(equity), "cash": round(cash), "holdings_value": round(hv),
               "trades": trades, "tripped": tripped, "n_positions": len(positions)}
     return new_state, result
 
 
-def new_state(investment):
+def new_state(investment, cb_limit=CB_LIMIT):
     return {"investment": float(investment), "cash": float(investment), "positions": [],
-            "cb_month": None, "cb_base_pnl": 0.0}
+            "cb_month": None, "cb_base_pnl": 0.0, "cb_limit": float(cb_limit)}

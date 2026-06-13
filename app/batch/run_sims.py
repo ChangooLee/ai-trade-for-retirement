@@ -33,6 +33,10 @@ def main():
             print(f"asof {asof}가 주말 — 거래일 아님, 시뮬 전진 생략.", file=sys.stderr); return
     except Exception:
         pass
+    from app.portfolio.sizing import compute_target_slots, compute_weight_per_stock  # noqa: E402
+    sz = sig.get("sizing", {})
+    maxpos = int(sz.get("max_positions", 15)); baseslot = float(sz.get("base_slot_weight", 0.05))
+    target = float(sig.get("exposure", {}).get("target", 0.4))
     db.init()
     actives = db.list_active()
     done = skipped = 0
@@ -43,7 +47,12 @@ def main():
             skipped += 1; continue
         try:
             state = db.state_from_row(s)
-            ns, r = engine.execute_day(state, asof, sig)
+            # 사용자별 노출배수(공격성)로 슬롯/비중 재계산 (캡 100%)
+            mult = float(s["exposure_mult"]) if s["exposure_mult"] is not None else 1.0
+            m2 = min(1.0, target * mult)
+            slots = compute_target_slots(m2, maxpos, baseslot); weight = compute_weight_per_stock(m2, slots)
+            usig = dict(sig); usig["exposure"] = {"slots": int(slots), "weight": weight}
+            ns, r = engine.execute_day(state, asof, usig)   # cb_limit는 state에서 적용
             db.save_step(s["sub"], ns, r)
             done += 1
         except Exception as e:

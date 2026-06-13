@@ -323,6 +323,8 @@ def main():
             "hold_days": int(cfg["holding"]["max_holding_days"]),
             "cost": float(cfg["cost"]["assumed_round_trip_cost"]),
             "exposure": {"target": m, "slots": int(slots), "weight": weight, "mode": exp["mode"]},
+            "sizing": {"max_positions": int(cfg["sizing"]["max_positions"]),
+                       "base_slot_weight": float(cfg["sizing"]["base_slot_weight"])},   # 사용자 노출배수 재계산용
             "buy_order": [{"ticker": tk, "name": stocks[tk]["name"], "close": float(stocks[tk]["close"])}
                           for tk in buy_order if tk in stocks and stocks[tk].get("close")],
             "sell_tickers": sorted(set(legacy_sell)),     # 청산 = 시간40일 + 20주선 이탈만(TDA 청산 미사용 — 자문 전용)

@@ -322,18 +322,12 @@ async function renderSim(){
   if(!syncEnabled()){ el.innerHTML='<div class="empty">구글 로그인(동기화) 설정 시 사용할 수 있습니다.</div>'; return; }
   if(!idToken){ el.innerHTML='<div class="note">🔒 <b>로그인</b>하면 알고리즘 시뮬레이터를 시작할 수 있습니다(우측 상단). 시작 후엔 브라우저를 꺼도 <b>매일 서버 배치</b>가 자동으로 페이퍼 매매를 이어갑니다.</div>'; return; }
   await simFetch();
-  if(!simData || !simData.active){
-    const def = DATA.initial_capital||10000000;
-    el.innerHTML=`<div class="card"><div class="hd"><b>시뮬레이션 시작</b></div>
-      <div class="srow" style="gap:10px;align-items:center"><label>투자금액(원)</label><input id="simInv" type="number" value="${def}" style="width:160px">
-      <button class="btn" style="background:#1b3a6b;border-color:#2a5298" onclick="simStart()">▶ 시작</button>
-      <span class="sub">시작일 종가부터 우리 알고리즘으로 자동 매매를 시작합니다.</span></div></div>`;
-    return;
-  }
+  if(!simData || !simData.active){ simStartForm(); return; }
   const d=simData, cls=(d.total_pnl>=0?'pos':'neg'), days=(d.equity_curve||[]).length;
+  const aggr = {1:"기본",1.5:"적극",2:"공격",2.5:"최대"}[d.exposure_mult]||("×"+d.exposure_mult);
   el.innerHTML=`<div class="card">
-    <div class="hd"><b>🤖 운영 중</b> <span class="mono">시작 ${d.start_date} · 최근처리 ${d.last_processed||'대기'} · ${days}거래일</span>
-      <button class="btn x" onclick="simReset()">리셋</button></div>
+    <div class="hd"><b>🤖 운영 중</b> <span class="mono">시작 ${d.start_date} · 최근처리 ${d.last_processed||'대기'} · ${days}거래일 · 공격성 ${aggr}(×${d.exposure_mult}) · 한도 ${d.cb_limit>0?'−'+Math.round(d.cb_limit*100)+'%':'끔'}</span>
+      <button class="btn" onclick="simStartForm(true)">⚙ 설정·리셋</button></div>
     <div class="summary-row">
       <div>투자금<b>${W(d.investment)}</b></div><div>평가자산<b>${W(d.equity)}</b></div>
       <div>총손익<b class="${cls}">${W(d.total_pnl)} (${P(d.total_ret)})</b></div>
@@ -356,20 +350,30 @@ function drawSimChart(curve, inv){
   ctx.strokeStyle = ys[ys.length-1]>=inv?"#34d399":"#ef4444"; ctx.lineWidth=1.6; ctx.beginPath();
   curve.forEach((p,i)=>{ const x=X(i),y=Y(p.equity); i?ctx.lineTo(x,y):ctx.moveTo(x,y); }); ctx.stroke();
 }
+window.simStartForm=function(prefill){
+  const el=document.getElementById("simSection"); if(!el) return;
+  const d = (prefill && simData) ? simData : null;
+  const inv = d ? d.investment : (DATA.initial_capital||10000000);
+  const mult = d ? d.exposure_mult : 1.0, cb = d ? d.cb_limit : 0.03;
+  const opt=(v,cur,lab)=>`<option value="${v}" ${(+cur===+v)?'selected':''}>${lab}</option>`;
+  el.innerHTML=`<div class="card"><div class="hd"><b>시뮬레이션 ${d?'설정 변경·재시작':'시작'} · 공격성 설정</b>${d?' <span class="sub">시작 시 기존 시뮬 기록 초기화</span>':''}</div>
+    <div class="srow" style="gap:10px;align-items:center;flex-wrap:wrap">
+      <label>투자금액(원)</label><input id="simInv" type="number" value="${Math.round(inv)}" style="width:140px">
+      <label>노출(공격성)</label><select id="simMult">${opt(1.0,mult,"기본 ×1.0 (노출 40%대)")}${opt(1.5,mult,"적극 ×1.5")}${opt(2.0,mult,"공격 ×2.0 (≈풀투자)")}${opt(2.5,mult,"최대 ×2.5")}</select>
+      <label>월 손실한도</label><select id="simCb">${opt(0.03,cb,"−3% (권장)")}${opt(0.05,cb,"−5%")}${opt(0.08,cb,"−8%")}${opt(0,cb,"끔")}</select>
+      <button class="btn" style="background:#1b3a6b;border-color:#2a5298" onclick="simStart()">▶ 시작</button>${d?' <a href="#" class="sub" style="color:#9aa7b8" onclick="renderSim();return false">취소</a>':''}</div>
+    <div class="sub" style="margin-top:6px">노출↑일수록 수익·낙폭 모두 커집니다 (2026 백테스트 ₩1천만: 기본 +7%/MDD−8% · 공격×2.0 +22%/MDD−17%). <b>서킷브레이커만 풀면 공격성 효과 없음</b> — 노출이 실제 레버. 월 손실한도는 고노출에서 낙폭을 줄여줍니다(−3% 권장).</div></div>`;
+};
 window.simStart=async ()=>{
   const inv=+(document.getElementById("simInv").value||0);
   if(!(inv>=10000)){ alert("투자금액을 입력하세요(최소 1만원)."); return; }
-  try{ const r=await fetch(SIM_API+"/start",{method:"POST",headers:{Authorization:"Bearer "+idToken,"Content-Type":"application/json"},body:JSON.stringify({investment:inv})});
+  const exposure_mult=+(document.getElementById("simMult").value||1);
+  const cb_limit=+(document.getElementById("simCb").value||0.03);
+  try{ const r=await fetch(SIM_API+"/start",{method:"POST",headers:{Authorization:"Bearer "+idToken,"Content-Type":"application/json"},body:JSON.stringify({investment:inv,exposure_mult,cb_limit})});
     if(r.status===401){ clearSession(); alert("다시 로그인해주세요."); return; }
     if(!r.ok){ alert("시작 실패 ("+r.status+")"); return; }
     simData=await r.json(); renderSim();
   }catch(e){ alert("시작 실패: "+e); } };
-window.simReset=async ()=>{
-  if(!confirm("시뮬레이션을 리셋하고 오늘부터 다시 시작할까요? (기존 시뮬 기록 삭제)")) return;
-  try{ const r=await fetch(SIM_API+"/reset",{method:"POST",headers:{Authorization:"Bearer "+idToken,"Content-Type":"application/json"},body:JSON.stringify({})});
-    if(r.status===401){ clearSession(); alert("다시 로그인해주세요."); return; }
-    if(r.ok) simData=await r.json(); renderSim();
-  }catch(e){ alert("리셋 실패: "+e); } };
 function renderAuth(){
   const el=document.getElementById("authBar"); if(!el) return;
   const badge=document.getElementById("storeBadge");

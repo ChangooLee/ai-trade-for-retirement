@@ -151,14 +151,20 @@ class Handler(BaseHTTPRequestHandler):
         db = _simdb(); db.init()
         sub = info["sub"]
         try:
-            if path == "/api/sim/reset":
-                cur = db.get_sim(sub)
-                inv = float(data.get("investment") or (cur and cur["investment"]) or 0)
-            else:
-                inv = float(data.get("investment") or 0)
+            cur = db.get_sim(sub) if path == "/api/sim/reset" else None
+            inv = float(data.get("investment") or (cur and cur["investment"]) or 0)
             if not (10000 <= inv <= 100_000_000_000):     # 1만~1000억 범위
                 return self._send(400, {"error": "investment out of range"})
-            db.start_sim(sub, info.get("email", ""), inv, _latest_asof())
+            def _num(key, default, lo, hi):
+                v = data.get(key)
+                if v is None:
+                    return float((cur and cur[key]) if cur and cur[key] is not None else default)
+                v = float(v)
+                return max(lo, min(hi, v))
+            cb_limit = _num("cb_limit", 0.03, 0.0, 0.20)         # 0=끔 ~ 20%
+            exposure_mult = _num("exposure_mult", 1.0, 0.5, 2.5)  # 공격성 배수
+            db.start_sim(sub, info.get("email", ""), inv, _latest_asof(),
+                         cb_limit=cb_limit, exposure_mult=exposure_mult)
             return self._send(200, db.results(sub) or {"active": True})
         except Exception as e:
             return self._send(500, {"error": str(e)})
