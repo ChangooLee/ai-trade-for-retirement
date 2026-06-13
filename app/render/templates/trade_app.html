@@ -87,7 +87,14 @@ details{margin-top:6px}summary{cursor:pointer;color:#9cd6ff;font-size:12.5px}
   <div><label>수량</label><input id="shares" type="number" style="width:90px" placeholder="주"></div>
   <div><label>매수일</label><input id="bdate" type="date" style="width:140px"></div>
   <button class="btn" id="addBtn">+ 보유 추가</button>
-  <div style="margin-left:auto"><label>초기자본(원)</label><input id="capital" type="number" style="width:140px"></div>
+  <div style="margin-left:auto"><label>현금 투자액 · 원금(원)</label><input id="capital" type="number" style="width:150px"><span class="sub" style="display:block">실제 투입한 현금. 월 손실한도의 기준.</span></div>
+</div>
+<div class="form" style="margin-top:6px">
+  <div><label>현금 입금/출금</label><input id="cfAmt" type="number" style="width:130px" placeholder="원"></div>
+  <div><label>일자</label><input id="cfDate" type="date" style="width:140px"></div>
+  <button class="btn" onclick="addCashflow(1)">+ 입금</button>
+  <button class="btn" onclick="addCashflow(-1)">− 출금</button>
+  <div id="cfList" class="sub" style="margin-left:8px;align-self:center"></div>
 </div>
 <div id="holdInput"></div>
 
@@ -98,6 +105,11 @@ details{margin-top:6px}summary{cursor:pointer;color:#9cd6ff;font-size:12.5px}
 
 <h2>🔴 매도 알림 <span class="sub" style="font-weight:400">(시간청산 40거래일 · TDA 위상 불안정)</span></h2>
 <div class="cards" id="sellCards"></div>
+
+<h2>📒 페이퍼 트레이딩 기록 <span class="sub" style="font-weight:400" id="logSub"></span></h2>
+<div class="dxline"><span class="lab">실적 누적</span>보유 카드의 <b>📒 매도 기록</b>으로 청산하면 여기에 실현손익이 쌓입니다. 실거래 전 <b>1개월+ 페이퍼 실적</b>(승률·손익비)이 검증 단계입니다.</div>
+<div id="logStats" class="summary-row"></div>
+<div id="logTable"></div>
 
 <h2>🧭 종목 발굴</h2>
 <div class="cmp">
@@ -144,24 +156,42 @@ details{margin-top:6px}summary{cursor:pointer;color:#9cd6ff;font-size:12.5px}
 <script>
 const DATA = __DATA__;
 const LSH = "leaders_holdings_v1", LSC = "leaders_capital_v1";
+const LSF = "leaders_cashflows_v1", LSL = "leaders_tradelog_v1", LSE = "leaders_eqhist_v1";
 let holdings = [];
 try { holdings = JSON.parse(localStorage.getItem(LSH) || "[]"); } catch(e){}
-let capital = +(localStorage.getItem(LSC) || DATA.initial_capital);
+// 현금흐름 원장(투입+/회수−) — '현금 투자액(원금)'=합계. 기존 단일 capital은 1건 초기투입으로 마이그레이션.
+let cashflows = [];
+try { cashflows = JSON.parse(localStorage.getItem(LSF) || "[]"); } catch(e){}
+if(!cashflows.length){
+  const seed = +(localStorage.getItem(LSC) || DATA.initial_capital);
+  const d0 = holdings.length ? holdings.map(h=>h.entry_date).sort()[0] : DATA.meta.asof;
+  cashflows = [{date:d0, amount:seed, note:"초기 투입", initial:true}];
+}
+// 페이퍼 매매 일지(청산 거래) — 실적 누적
+let tradelog = [];
+try { tradelog = JSON.parse(localStorage.getItem(LSL) || "[]"); } catch(e){}
 const W = v => v==null||isNaN(v) ? "—" : "₩"+Math.round(v).toLocaleString();
 const P = (v,d=1) => v==null||isNaN(v) ? "—" : (v>=0?"+":"")+(v*100).toFixed(d)+"%";
 const esc = s => (s+"").replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-function save(){ localStorage.setItem(LSH, JSON.stringify(holdings)); localStorage.setItem(LSC, capital); }
-// ---- 서킷브레이커(월 손실 한도 −3%, 결정 0004 / PIT 검증: 최악월 −14.5%→−6.3%, MDD −27→−25%) ----
-const LSE = "leaders_eqhist_v1", CB_LIMIT = 0.03;
+const principal = () => cashflows.reduce((a,c)=>a+(+c.amount||0),0);   // 현금 투자액(순투입 원금)
+function save(){ localStorage.setItem(LSH, JSON.stringify(holdings));
+  localStorage.setItem(LSF, JSON.stringify(cashflows)); localStorage.setItem(LSL, JSON.stringify(tradelog)); }
+// ---- 서킷브레이커(월 손실 한도 −3%, 결정 0004 / PIT 검증: 최악월 −14.5%→−6.3%) ----
+const CB_LIMIT = 0.03;
 function eqHist(){ try{ return JSON.parse(localStorage.getItem(LSE)||"{}"); }catch(e){ return {}; } }
-function cbStatus(total){   // 데이터 기준일의 '월'을 키로, 월초 자산 대비 당월 손익(MTD) 계산
+function cbStatus(total){   // 월초 자산 대비 당월 손익(MTD) — 현금흐름(추가입금·출금)은 손익에서 제외
   const key=(DATA.meta.asof||"").slice(0,7);
   if(!key || !(total>0)) return {key, base:null, mtd:null, tripped:false, active:false};
   const h=eqHist();
   if(h[key]==null) h[key] = (h._last!=null ? h._last : total);  // 새 달 → 전월 마지막 자산을 월초 기준으로 승계
   h._last=total; localStorage.setItem(LSE, JSON.stringify(h));
-  const base=h[key], mtd = base>0 ? total/base-1 : 0;
-  return {key, base, mtd, tripped: mtd <= -CB_LIMIT, active:true};
+  const base=h[key];
+  // 당월 '초기투입 외' 현금흐름 합 → 손익 오염 방지(입금이 수익처럼, 출금이 손실처럼 보이지 않게)
+  const flowMonth = cashflows.filter(c=>!c.initial && (c.date||"").slice(0,7)===key)
+                             .reduce((a,c)=>a+(+c.amount||0),0);
+  const adj = total - flowMonth, mtd = base>0 ? adj/base - 1 : 0;
+  return {key, base, mtd, mtdWon: adj-base, limitWon: base*CB_LIMIT, flowMonth,
+          tripped: mtd <= -CB_LIMIT, active:true};
 }
 const ALL = DATA.all_stocks || {};   // 코드 -> [이름, 종가, 시장] (전 상장종목)
 const BROAD = DATA.broad || {};      // 유니버스 밖 + 분석(지표·TDA 스칼라, 차트 없음)
@@ -206,8 +236,11 @@ function compute(){
     return {...h, name:m.name, market:m.market, sector:m.sector, analyzed:m.analyzed, chart:m.chart, tda:m.tda, swing20:m.swing20,
             cur, value, cost, days, rem, status, tdaSell, ret: cost? cur/h.entry_price-1:NaN, planned:plannedExit(h.entry_date)}; });
   const hv=open.reduce((a,h)=>a+(h.value||0),0), ic=open.reduce((a,h)=>a+(h.cost||0),0);
-  const cash=capital-ic, total=cash+hv; open.forEach(h=>h.weight=total>0?h.value/total:0);
-  return {open, total, cash, hv, ic};
+  const prin=principal();                                   // 현금 투자액(원금)
+  const realized=tradelog.reduce((a,t)=>a+(+t.pnl||0),0);   // 실현손익(청산 거래)
+  const cash=prin-ic+realized, total=cash+hv;               // 미투자 현금(실현손익 포함)
+  open.forEach(h=>h.weight=total>0?h.value/total:0);
+  return {open, total, cash, hv, ic, prin, realized, unrealized:hv-ic, pnl:total-prin};
 }
 // ---- 차트 (캔들 + MA + 거래량) ----
 function ma(arr,p){const o=[];for(let i=0;i<arr.length;i++){if(i<p-1){o.push(null);continue;}let s=0;for(let j=i-p+1;j<=i;j++)s+=arr[j];o.push(s/p);}return o;}
@@ -335,11 +368,12 @@ function render(){
   const pf=compute();
   // 서킷브레이커 (월 손실 한도 −3%)
   const cb=cbStatus(pf.total); window.CB_TRIP=cb.tripped;
+  const cbBasis = `<span class="sub">기준: 현금 투자액(원금) ${W(pf.prin)} · 월초 자산 ${W(cb.base)} · 한도 −${(CB_LIMIT*100).toFixed(0)}%=${W(cb.limitWon)}${cb.flowMonth?` · 당월 입출금 ${W(cb.flowMonth)} 제외`:''}</span>`;
   document.getElementById("cbBanner").innerHTML = !cb.active
-    ? `<div class="note">🛡 <b>서킷브레이커</b> 대기 — 보유·자본을 입력하면 월초 자산 대비 당월 손익을 추적해 <b>−${(CB_LIMIT*100).toFixed(0)}%</b> 도달 시 당월 신규 매수를 중단합니다(결정 0004·PIT 검증).</div>`
+    ? `<div class="note">🛡 <b>서킷브레이커</b> 대기 — 현금 투자액(원금)과 보유를 입력하면 <b>투입 원금 기준</b> 월초 자산 대비 당월 손익을 추적해 <b>−${(CB_LIMIT*100).toFixed(0)}%</b> 도달 시 당월 신규 매수를 중단합니다(결정 0004·PIT 검증).</div>`
     : cb.tripped
-      ? `<div class="warn" style="border-left-color:#ef4444;background:#2a1416"><b class="neg">🛑 월 손실 한도 도달</b> — 당월 손익 <b class="neg">${P(cb.mtd)}</b> (월초 ${W(cb.base)} → 현재 ${W(pf.total)}). <b>당월 신규 매수 중단</b>(보유분은 시간청산·TDA 규칙 유지). ${cb.key} 종료 후 자동 해제. <span class="sub">PIT 검증: 이 규칙으로 최악월 −14.5%→−6.3%, MDD −27→−25%.</span></div>`
-      : `<div class="note" style="border-left-color:#34d399">🛡 <b>서킷브레이커 정상</b> — 당월 손익 <b class="${cb.mtd>=0?'pos':'neg'}">${P(cb.mtd)}</b> (월초 ${W(cb.base)} 기준). 한도 <b>−${(CB_LIMIT*100).toFixed(0)}%</b>까지 여유 <b>${P(cb.mtd+CB_LIMIT)}</b> → 신규 매수 가능.</div>`;
+      ? `<div class="warn" style="border-left-color:#ef4444;background:#2a1416"><b class="neg">🛑 월 손실 한도 도달</b> — 당월 손익 <b class="neg">${P(cb.mtd)} (${W(cb.mtdWon)})</b>. <b>당월 신규 매수 중단</b>(보유분은 시간청산·TDA 규칙 유지). ${cb.key} 종료 후 자동 해제.<br>${cbBasis}</div>`
+      : `<div class="note" style="border-left-color:#34d399">🛡 <b>서킷브레이커 정상</b> — 당월 손익 <b class="${cb.mtd>=0?'pos':'neg'}">${P(cb.mtd)} (${W(cb.mtdWon)})</b>. 한도 −${(CB_LIMIT*100).toFixed(0)}%까지 여유 <b>${P(cb.mtd+CB_LIMIT)}</b>.<br>${cbBasis}</div>`;
   // 배너
   const slots=Math.min(DATA.sizing.max_positions,Math.ceil(m/DATA.sizing.base_slot_weight)), pw=slots?m/slots:0;
   document.getElementById("banner").innerHTML=`<div class="mode ${mc}">${e.mode}</div>
@@ -357,15 +391,18 @@ function render(){
   if(top && top[0]!=="기타(미분류)" && np && top[1]/np>=0.4) warns+=`<div class="warn">⚠ 섹터 쏠림: <b>${top[0]} ${Math.round(top[1]/np*100)}%</b> (${top[1]}/${np}종목) — 분산 검토.</div>`;
   document.getElementById("warns").innerHTML=warns;
   // 포트폴리오 요약
-  document.getElementById("pfSub").textContent=`${pf.open.length}종목 보유`;
-  document.getElementById("pfSummary").innerHTML=`<div>총자산<b>${W(pf.total)}</b></div><div>현금<b>${W(pf.cash)} (${pf.total?Math.round(pf.cash/pf.total*100):100}%)</b></div>
-    <div>투자<b>${W(pf.hv)} (${pf.total?Math.round(pf.hv/pf.total*100):0}%)</b></div><div>평가손익<b class="${pf.hv-pf.ic>=0?'pos':'neg'}">${W(pf.hv-pf.ic)}</b></div>`;
+  document.getElementById("pfSub").textContent=`${pf.open.length}종목 보유 · 청산 ${tradelog.length}건`;
+  document.getElementById("pfSummary").innerHTML=`<div>현금 투자액(원금)<b>${W(pf.prin)}</b></div><div>총자산<b>${W(pf.total)}</b></div>
+    <div>총수익률<b class="${pf.pnl>=0?'pos':'neg'}">${P(pf.prin>0?pf.pnl/pf.prin:NaN)} (${W(pf.pnl)})</b></div>
+    <div>현금<b>${W(pf.cash)} (${pf.total?Math.round(pf.cash/pf.total*100):100}%)</b></div>
+    <div>평가손익<b class="${pf.unrealized>=0?'pos':'neg'}">${W(pf.unrealized)}</b></div><div>실현손익<b class="${pf.realized>=0?'pos':'neg'}">${W(pf.realized)}</b></div>`;
   // 보유 카드 + 매도 알림
   const hc=[], sc=[];
   pf.open.forEach(h=>{
     if(!h.analyzed){   // 유니버스 외 — 가격·손익만 추적
       hc.push(`<div class="card hold"><div class="hd"><b>${esc(h.name||h.ticker)}</b> <span class="mono">${h.ticker}·${h.market||''}</span>
         <span class="pill hold">유니버스 외 · ${(h.weight*100).toFixed(1)}%</span>
+        <button class="btn" onclick="recordSell('${h.ticker}','${h.entry_date}')">📒 매도 기록</button>
         <button class="btn x" onclick="del('${h.ticker}','${h.entry_date}')">삭제</button></div>
         <div class="meta">진입 ${h.entry_date} @ ${W(h.entry_price)} × ${h.shares}주</div>
         <div class="plan">
@@ -385,6 +422,7 @@ function render(){
     const card=`<div class="card ${cls}">
       <div class="hd"><b>${esc(h.name||h.ticker)}</b> <span class="mono">${h.ticker}·${h.market||''}·${h.sector||''}</span>
         <span class="pill ${pill}">${h.status} · ${(h.weight*100).toFixed(1)}%</span>
+        <button class="btn" onclick="recordSell('${h.ticker}','${h.entry_date}')">📒 매도 기록</button>
         <button class="btn x" onclick="del('${h.ticker}','${h.entry_date}')">삭제</button></div>
       <div class="meta">진입 ${h.entry_date} @ ${W(h.entry_price)} × ${h.shares}주 · ${h.days}거래일 보유 / 남은 ${h.rem}일</div>
       ${reason}${h.chart?chartBlock(h.ticker):`<div class="meta" style="color:#8b97a7">차트 미제공(유니버스 상위 ${DATA.meta.universe_count} 외) · 지표·TDA 신호는 분석됨</div>`}
@@ -484,6 +522,7 @@ function render(){
       <li><b>D4 재검증</b> 시장별 변동성 타게팅 노출을 per-market min()으로 재검증</li>
       <li><b>설계 근거</b> 캔들패턴·돌파·VCP는 일반화 검증서 초과수익 없어 제외 / 강제 손절은 시간청산 대비 성과 악화로 미사용</li></ol>
       <div class="meta" style="margin-top:6px">※ TDA는 방향이 아닌 리스크/청산 신호. 모든 표시 신호는 검증 재정립까지 참고용 — 실매매 진입 근거로 사용하지 말 것.</div></div>`;
+  renderPaperLog(); renderCashflows();
   paintCharts();
 }
 window.addEventListener("resize",()=>setTimeout(paintCharts,100));
@@ -495,7 +534,72 @@ function renderHoldInput(){
   el.innerHTML='<table><thead><tr><th>종목</th><th>매수일</th><th class="num">매수가</th><th class="num">수량</th><th></th></tr></thead><tbody>'+
     holdings.map(h=>{const mt=meta(h.ticker);const ext=DATA.stocks[h.ticker]?'':' <span style="color:#fbbf24">·유니버스 외</span>';return `<tr><td><b>${esc(mt.name||h.ticker)}</b> <span class="mono">${h.ticker}</span>${ext}</td><td>${h.entry_date}</td><td class="num">${W(h.entry_price)}</td><td class="num">${h.shares}주</td><td><button class="btn x" onclick="del('${h.ticker}','${h.entry_date}')">삭제</button></td></tr>`;}).join("")+'</tbody></table>';
 }
-window.del=function(tk,date){holdings=holdings.filter(h=>!(h.ticker===tk&&h.entry_date===date));save();renderHoldInput();render();};
+window.del=function(tk,date){ if(!confirm("이 보유 기록을 삭제할까요? (오입력 정정용 — 매도 실적이 필요하면 '매도 기록'을 쓰세요)")) return;
+  holdings=holdings.filter(h=>!(h.ticker===tk&&h.entry_date===date));save();renderHoldInput();render();};
+// 매도 기록: 보유 → 청산 거래(일지). 실현손익 누적 = 페이퍼 트레이딩 실적.
+window.recordSell=function(tk,date){
+  const h=holdings.find(x=>x.ticker===tk&&x.entry_date===date); if(!h) return;
+  const m=meta(tk), curp=m.cur;
+  const ans=prompt(`'${m.name||tk}' 매도 기록\n수량 ${h.shares}주 · 진입 ${W(h.entry_price)}\n매도가를 입력하세요(원):`, curp?Math.round(curp):"");
+  if(ans===null) return;
+  const exit=+(""+ans).replace(/[,₩\s]/g,""); if(!(exit>0)){alert("매도가를 올바르게 입력하세요.");return;}
+  const xdate=prompt("매도일 (YYYY-MM-DD):", DATA.meta.asof)||DATA.meta.asof;
+  const cost=h.entry_price*h.shares, proceeds=exit*h.shares;
+  tradelog.push({ticker:tk, name:m.name||tk, entry_date:h.entry_date, entry_price:h.entry_price,
+    exit_date:xdate, exit_price:exit, shares:h.shares, cost, proceeds,
+    pnl:proceeds-cost, ret:exit/h.entry_price-1, days:holdingDays(h.entry_date)});
+  holdings=holdings.filter(x=>!(x.ticker===tk&&x.entry_date===date));
+  save();renderHoldInput();render();
+};
+// 청산 기록 되돌리기(오입력) → 다시 보유로
+window.undoSell=function(i){ const t=tradelog[i]; if(!t) return;
+  if(!confirm(`'${t.name}' 청산 기록을 취소하고 보유로 되돌릴까요?`)) return;
+  holdings.push({ticker:t.ticker,entry_date:t.entry_date,entry_price:t.entry_price,shares:t.shares});
+  tradelog.splice(i,1); save(); renderHoldInput(); render(); };
+// 현금 입금/출금 (원금 변동)
+window.addCashflow=function(sign){
+  const v=+(document.getElementById("cfAmt").value||0); if(!(v>0)){alert("금액을 입력하세요.");return;}
+  const d=document.getElementById("cfDate").value||DATA.meta.asof;
+  cashflows.push({date:d, amount:sign*v, note:sign>0?"입금":"출금"});
+  document.getElementById("cfAmt").value=""; save(); renderCashflows(); render();
+};
+window.delCashflow=function(i){ if(cashflows[i] && cashflows[i].initial){alert("초기 투입은 '현금 투자액' 입력란에서 수정하세요.");return;}
+  cashflows.splice(i,1); save(); renderCashflows(); render(); };
+function renderCashflows(){
+  const el=document.getElementById("cfList"); if(!el) return;
+  const extra=cashflows.filter(c=>!c.initial);
+  el.innerHTML = extra.length ? '입출금 내역: '+extra.map((c)=>{const gi=cashflows.indexOf(c);
+    return `<span class="chip">${c.date} ${c.amount>0?'+':''}${W(c.amount)} <a href="#" onclick="delCashflow(${gi});return false" style="color:#ef4444">×</a></span>`;}).join(" ") : '';
+}
+// 페이퍼 매매 일지 — 청산 거래 표 + 실적 통계
+function renderPaperLog(){
+  const tb=document.getElementById("logTable"), st=document.getElementById("logStats"), sub=document.getElementById("logSub");
+  if(!tb) return;
+  const n=tradelog.length;
+  if(!n){ tb.innerHTML='<div class="empty">아직 청산 기록이 없습니다. 보유 카드의 「📒 매도 기록」으로 매도를 기록하세요.</div>';
+    st.innerHTML=''; if(sub) sub.textContent=''; return; }
+  const wins=tradelog.filter(t=>t.pnl>0).length, totPnl=tradelog.reduce((a,t)=>a+t.pnl,0);
+  const avgRet=tradelog.reduce((a,t)=>a+t.ret,0)/n, avgDays=tradelog.reduce((a,t)=>a+(t.days||0),0)/n;
+  const gains=tradelog.filter(t=>t.pnl>0).reduce((a,t)=>a+t.pnl,0), losses=-tradelog.filter(t=>t.pnl<0).reduce((a,t)=>a+t.pnl,0);
+  const pf_ratio = losses>0 ? gains/losses : (gains>0?Infinity:0);
+  const dates=tradelog.map(t=>t.exit_date).filter(Boolean).sort();
+  const span = dates.length ? Math.round((new Date(dates[dates.length-1])-new Date(dates[0]))/86400000) : 0;
+  if(sub) sub.textContent=`청산 ${n}건 · 실적 기간 ${span}일${span>=30?' ✅(1개월+)':' (1개월 미만)'}`;
+  st.innerHTML=`<div>총 실현손익<b class="${totPnl>=0?'pos':'neg'}">${W(totPnl)}</b></div>
+    <div>승률<b>${Math.round(wins/n*100)}% (${wins}/${n})</b></div>
+    <div>평균 수익률<b class="${avgRet>=0?'pos':'neg'}">${P(avgRet)}</b></div>
+    <div>손익비<b>${isFinite(pf_ratio)?pf_ratio.toFixed(2):'∞'}</b></div>
+    <div>평균 보유<b>${Math.round(avgDays)}거래일</b></div>`;
+  const rows=tradelog.map((t,i)=>`<tr>
+    <td><b>${esc(t.name||t.ticker)}</b> <span class="mono">${t.ticker}</span></td>
+    <td>${t.entry_date} → ${t.exit_date}</td>
+    <td class="num">${W(t.entry_price)} → ${W(t.exit_price)}</td>
+    <td class="num">${t.shares}주</td>
+    <td class="num ${t.pnl>=0?'pos':'neg'}"><b>${W(t.pnl)}</b> (${P(t.ret)})</td>
+    <td class="num">${t.days||0}일</td>
+    <td><button class="btn x" onclick="undoSell(${i})">취소</button></td></tr>`).join("");
+  tb.innerHTML='<table><thead><tr><th>종목</th><th>진입→청산</th><th class="num">가격</th><th class="num">수량</th><th class="num">실현손익</th><th class="num">보유</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';
+}
 function addHolding(){
   const tk=document.getElementById("search").dataset.ticker;
   const price=+document.getElementById("price").value, shares=+document.getElementById("shares").value;
@@ -523,8 +627,10 @@ suggEl.addEventListener("click",e=>{const d=e.target.closest("div[data-tk]");if(
   if(!document.getElementById("price").value)document.getElementById("price").value=SRC[tk][1];});
 document.addEventListener("click",e=>{if(!e.target.closest("#searchWrap"))suggEl.style.display="none";});
 document.getElementById("addBtn").addEventListener("click",addHolding);
-document.getElementById("capital").value=capital;
-document.getElementById("capital").addEventListener("change",e=>{capital=+e.target.value||DATA.initial_capital;save();render();});
+function initialCf(){ let c=cashflows.find(x=>x.initial); if(!c){ c={date:DATA.meta.asof,amount:0,note:"초기 투입",initial:true}; cashflows.unshift(c);} return c; }
+document.getElementById("capital").value=initialCf().amount;
+document.getElementById("capital").addEventListener("change",e=>{initialCf().amount=+e.target.value||0;save();render();});
+document.getElementById("cfDate").value=DATA.meta.asof;
 document.getElementById("bdate").value=DATA.meta.asof;
 document.getElementById("foot").innerHTML=`데이터: KRX 공식 API 종가(EOD), 매 거래일 갱신. 신호는 기준일 종가로 계산하고 집행은 다음 거래일 시가를 가정합니다. 보유·자본은 이 브라우저에만 저장됩니다.<br>검증: 전략 성과는 상장폐지 포함 PIT 패널로 검증(생존편향 제거, 위 카드). 단 라이브 후보는 현재 상장 종목에서 선정되고, 레짐 의존(2018·2019·2022·2024 음)이며 MDD가 깊어 서킷브레이커로 한도 관리합니다. 개별 종목의 수익은 보장하지 않습니다. 생성 ${DATA.meta.generated}`;
 renderHoldInput();render();
