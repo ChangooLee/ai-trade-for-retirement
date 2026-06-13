@@ -4,7 +4,7 @@
 <style>
 :root{--bg:#0b1020;--card:#141a24;--line:#232c3a;--mut:#8b97a7;--accent:#3b82f6;--up:#ef4444;--down:#3b82f6}
 *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#0b1020,#0d1322);color:#e6e9ee;font:13.5px/1.55 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
-.wrap{max-width:1200px;margin:0 auto;padding:22px}
+.wrap{max-width:1200px;margin:0 auto;padding:22px;position:relative}
 h1{font-size:24px;margin:0;letter-spacing:.5px;background:linear-gradient(90deg,#60a5fa,#34d399);-webkit-background-clip:text;background-clip:text;color:transparent}
 .tag{color:var(--mut);font-size:12.5px;margin-top:2px}
 .badges{margin:8px 0}.badge{padding:3px 9px;border-radius:6px;font-size:11px;font-weight:700;margin-right:6px}
@@ -67,8 +67,13 @@ details{margin-top:6px}summary{cursor:pointer;color:#9cd6ff;font-size:12.5px}
 .dxline{background:#0f1828;border:1px solid var(--line);border-radius:10px;padding:9px 14px;margin:8px 0;font-size:12.5px;color:#cbd5e1}
 .dxline b{color:#e6e9ee}.dxline .lab{color:var(--mut);font-weight:700;margin-right:6px}
 .dx{font-size:11.5px;color:#aeb9c7;margin:2px 0 8px;line-height:1.5}.dx b{color:#e6e9ee}
-#authBar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:6px 0 2px;font-size:12px;color:var(--mut)}
-#authBar .who{color:#e6e9ee;font-weight:600}#authBar .synced{color:#34d399}#authBar .pill2{background:#13203a;border:1px solid var(--line);border-radius:999px;padding:2px 9px}
+#authBar{position:absolute;top:18px;right:16px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--mut);z-index:20}
+#authBar .who{color:#e6e9ee;font-weight:600;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#authBar .synced{color:#34d399}
+#authBar .lbtn{background:#13203a;border:1px solid var(--line);border-radius:999px;padding:4px 12px;color:#e6e9ee;cursor:pointer;font-size:12px}
+#authBar .lbtn:hover{background:#1b2c4d}
+#authBar a{color:#9aa7b8;text-decoration:none}
+@media(max-width:640px){#authBar{position:static;justify-content:flex-end;margin:4px 0 8px}}
 </style><script src="https://accounts.google.com/gsi/client" async defer></script></head><body><div class="wrap">
 
 <h1>📈 LEADERS DESK</h1>
@@ -226,13 +231,13 @@ window.gLogout = ()=>{ try{ google.accounts.id.disableAutoSelect(); }catch(e){} 
 function renderAuth(){
   const el=document.getElementById("authBar"); if(!el) return;
   const badge=document.getElementById("storeBadge");
-  if(!syncEnabled()){ el.innerHTML='<span class="pill2">🔒 로컬 저장 — 구글 동기화 미설정</span>'; return; }
+  if(!syncEnabled()){ el.innerHTML=''; return; }   // 미설정 → 코너 비움(로컬 저장 모드)
   if(gUser){
     if(badge) badge.textContent="구글 동기화";
-    el.innerHTML=`<span class="pill2 synced">✅ 동기화 켜짐</span> <span class="who">${esc(gUser.name||gUser.email||"로그인")}</span> <span id="syncState" class="sub">불러옴</span> <a href="#" onclick="gLogout();return false" style="color:#9aa7b8">로그아웃</a> <span class="sub">기기 간 동일 데이터로 저장됩니다.</span>`;
+    el.innerHTML=`<span class="synced" title="기기 간 동일 데이터로 본인 서버에 저장됩니다">✅ 동기화</span> <span class="who" title="${esc(gUser.email||'')}">${esc(gUser.name||gUser.email||"로그인")}</span> <span id="syncState" class="sub"></span> <a href="#" onclick="gLogout();return false">로그아웃</a>`;
   } else {
     if(badge) badge.textContent="로컬 저장(브라우저)";
-    el.innerHTML='<div id="gbtn"></div> <span class="sub">구글 로그인하면 어느 기기에서나 같은 보유·일지가 보입니다(본인 서버 저장).</span>';
+    el.innerHTML='<span class="sub" title="로그인하면 어느 기기에서나 같은 보유·일지가 본인 서버에 동기화됩니다">동기화</span><div id="gbtn"></div>';
     setTimeout(initGoogleButton, 50);
   }
 }
