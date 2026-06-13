@@ -429,7 +429,14 @@ function meta(tk){   // stocks(풀+차트) → broad(분석·차트없음) → a
   if(a) return {name:a[0], market:a[2], sector:"", cur:a[1], analyzed:false, chart:false};
   return {name:tk, market:"", sector:"", cur:null, analyzed:false, chart:false};
 }
-function tdaSellSig(t){ return !!(t && (t.risk_pct>=0.75 || (t.rising && t.risk_pct>=0.6))); }
+// TDA 청산 액션 — 방향게이트+점진적 축소 (백엔드 tda_exit_action과 동일). 상승 추세면 고위험이어도 '주의'(보유).
+function tdaAction(t){
+  if(!t || t.risk_pct==null) return "hold";
+  const m=DATA.tda_meta||{}, trim=m.exit_trim_pct||0.75, full=m.exit_full_pct||0.85;
+  if(t.risk_pct < trim) return "hold";
+  if(t.trend==null || t.trend>=0) return "caution";        // 추세 상향(또는 불명) → 보유, 주의만
+  return t.risk_pct>=full ? "exit" : "trim";               // 추세 하향: 초고위험=전량, 고위험=절반축소
+}
 function dartBadge(tk){ const d=(DATA.dart||{})[tk]; if(!d) return "";
   if(d.crit&&d.crit.length) return `<div class="srow"><b class="neg">🚫 위험공시 — 매수 금지 권고: ${esc(d.crit[0])}${d.crit.length>1?' 외 '+(d.crit.length-1)+'건':''}</b></div>`;
   if(d.warn&&d.warn.length) return `<div class="srow"><b style="color:#fbbf24">⚠ 공시 주의(희석·수급): ${esc(d.warn[0])}${d.warn.length>1?' 외 '+(d.warn.length-1)+'건':''}</b></div>`;
@@ -451,13 +458,14 @@ function plannedExit(entry){
 function compute(){
   const open = holdings.map(h=>{ const m=meta(h.ticker); const cur=m.cur;
     const value=cur*h.shares, cost=h.entry_price*h.shares, days=holdingDays(h.entry_date), rem=Math.max(0,DATA.hold_days-days);
-    const tdaSell=tdaSellSig(m.tda);
+    const tdaAct=tdaAction(m.tda);
     let status="정상";
     if(!cur) status="가격없음"; else if(!m.analyzed) status="유니버스외";
-    else if(days>=DATA.hold_days) status="매도예정"; else if(tdaSell) status="TDA매도";
+    else if(days>=DATA.hold_days) status="매도예정";
+    else if(tdaAct==="exit") status="TDA청산"; else if(tdaAct==="trim") status="TDA축소";
     else if(m.swing20 && cur<m.swing20) status="검토"; else if(rem<=5) status="임박";
     return {...h, name:m.name, market:m.market, sector:m.sector, analyzed:m.analyzed, chart:m.chart, tda:m.tda, swing20:m.swing20,
-            cur, value, cost, days, rem, status, tdaSell, ret: cost? cur/h.entry_price-1:NaN, planned:plannedExit(h.entry_date)}; });
+            cur, value, cost, days, rem, status, tdaAct, ret: cost? cur/h.entry_price-1:NaN, planned:plannedExit(h.entry_date)}; });
   const hv=open.reduce((a,h)=>a+(h.value||0),0), ic=open.reduce((a,h)=>a+(h.cost||0),0);
   const prin=principal();                                   // 현금 투자액(원금)
   const realized=tradelog.reduce((a,t)=>a+(+t.pnl||0),0);   // 실현손익(청산 거래)
@@ -636,12 +644,16 @@ function render(){
         <div class="meta" style="color:#fbbf24">⚠ 유니버스(상위 ${DATA.meta.universe_count}종목) 밖 — 가격·손익만 추적(차트·목표/손절·TDA 신호 미제공)</div></div>`);
       return;
     }
-    const isSell = h.status==="매도예정" || h.status==="TDA매도";
+    const isSell = h.status==="매도예정" || h.status==="TDA청산" || h.status==="TDA축소";
+    const caution = h.tdaAct==="caution";
     const cls = isSell?"sell":h.status==="임박"?"imminent":"hold";
     const pill = isSell?"sell":h.status==="임박"?"imm":"hold";
+    const trd = h.tda&&h.tda.trend!=null ? ` · 추세 ${h.tda.trend>=0?'상향':'하향'}(MA50 ${P(h.tda.trend,0)})` : "";
     const reason = h.status==="매도예정" ? `<div class="srow"><b class="neg">✅ 40거래일 시간청산 도달 — 다음 거래일 시가 매도</b></div>`
-      : h.status==="TDA매도" ? `<div class="srow"><b class="neg">🔴 TDA 매도 신호 — 위상 불안정(위험 상위 ${Math.round(h.tda.risk_pct*100)}%${h.tda.rising?" · 노름 상승":""})</b></div>` : "";
-    const tdaLine = h.tda ? `<div>TDA 위상리스크 <b class="${h.tdaSell?'neg':''}">${h.tda.risk>=0?'+':''}${h.tda.risk}</b> <span class="sub">상위 ${Math.round(h.tda.risk_pct*100)}% 위험${h.tda.rising?' · 노름↑':''}</span></div>` : "";
+      : h.status==="TDA청산" ? `<div class="srow"><b class="neg">🔴 TDA 전량 청산 권고 — 위상 고위험(상위 ${Math.round(h.tda.risk_pct*100)}%) + 추세 하향(MA50 이탈)</b></div>`
+      : h.status==="TDA축소" ? `<div class="srow"><b style="color:#fb923c">🟠 TDA 부분 축소 권고(절반) — 위상 고위험(상위 ${Math.round(h.tda.risk_pct*100)}%) + 추세 하향</b></div>`
+      : caution ? `<div class="srow"><b style="color:#fbbf24">⚠ 변동성 주의(보유 유지) — 위상 고위험(상위 ${Math.round(h.tda.risk_pct*100)}%)이나 추세 상향이라 청산 아님</b></div>` : "";
+    const tdaLine = h.tda ? `<div>TDA 위상리스크 <b class="${isSell?'neg':''}">${h.tda.risk>=0?'+':''}${h.tda.risk}</b> <span class="sub">상위 ${Math.round(h.tda.risk_pct*100)}% 위험${trd}</span></div>` : "";
     const card=`<div class="card ${cls}">
       <div class="hd"><b>${esc(h.name||h.ticker)}</b> <span class="mono">${h.ticker}·${h.market||''}·${h.sector||''}</span>
         <span class="pill ${pill}">${h.status} · ${(h.weight*100).toFixed(1)}%</span>
@@ -719,7 +731,7 @@ function render(){
       <li><b>리더 F</b> 6–1개월 모멘텀 백분위 ≥85, 52주 고점 대비 ≥80%, 일봉 50&gt;150&gt;200 정배열, 200일선 상승</li>
       <li><b>진입</b> 리더가 20주선까지 눌린 자리 — 그 주 저가 ≤ 20주선×1.05 & 그 주 종가 &gt; 20주선</li>
       <li><b>비중</b> 목표노출 ÷ 슬롯 수</li>
-      <li><b>청산</b> 진입 40거래일 시간청산 <b>또는</b> 보유 중 TDA 위상 불안정 발생(둘 중 먼저) — 강제 손절 미사용, 스윙로우=20일 저점은 참고</li>
+      <li><b>청산</b> 진입 40거래일 시간청산 <b>또는</b> 20주선 이탈(전량) · <b>TDA는 방향게이트+점진적 축소</b>: 위상 고위험이어도 <b>추세 상향이면 보유(주의만)</b>, 추세 하향 동시일 때만 절반축소(위험상위 75%)→전량(85%). 강제 손절 미사용</li>
       <li><b>이탈 스크린</b> 종가 &lt; 20주선 & 6–1개월 모멘텀 음수 → 회피·청산 검토</li></ol></div>
     <div class="card"><h3 style="margin:0 0 6px">🌀 TDA 방식 — 발굴 로직</h3><ol class="steps">
       <li><b>임베딩</b> 종목별 최근 ${(DATA.tda_meta||{}).window||60}거래일 로그수익률을 Takens 시간지연 임베딩(차원 ${(DATA.tda_meta||{}).embed_dim||3}·지연 1)으로 위상공간 점구름화</li>
@@ -727,7 +739,7 @@ function render(){
       <li><b>위상 특징</b> ① 지속성 풍경 L2 노름 ② 지속성 엔트로피 ③ 5거래일 전과의 Wasserstein 거리 ④ 노름 상승분</li>
       <li><b>위상리스크</b> 위 특징을 횡단면 z-score로 표준화·결합(노름0.5·엔트로피0.25·격동0.25 + 상승분 가중) — 높을수록 불안정</li>
       <li><b>방향</b> 6–1개월 모멘텀 + 종가/50일선 추세를 z-score 결합</li>
-      <li><b>매수</b> 추세&gt;0 & 위상리스크&lt;중앙값, 종합점수(방향−0.7·리스크) 상위 / <b>매도</b> 위상리스크 상위 25%(노름 높음·상승=전조)</li></ol></div>
+      <li><b>매수</b> 추세&gt;0 & 위상리스크&lt;중앙값, 종합점수(방향−0.7·리스크) 상위 / <b>매도</b> 위상리스크 상위 25% <b>AND 추세 하향(종가&lt;MA50)</b> — 방향 게이트(검증: TDA는 변동성 신호라 상승주 조기청산 방지, 승자 조기청산 35%→9%)</li></ol></div>
     <div class="card"><h3 style="margin:0 0 6px">🔬 백데이터 검증 — 모멘텀·추세 전략</h3>
       ${b.pit?`<div class="note" style="margin:4px 0;border-left-color:#34d399">✅ <b>생존편향 제거(PIT) 검증 — 라이브 유니버스(${esc(b.pit.universe)})와 일치</b>. 상장폐지 종목까지 포함한 시점별 데이터로 검증한 <b>신뢰 기준</b> 수치입니다(생존 패널의 부풀린 수치 아님).</div>
       <div class="kpis"><span>PIT 총수익<b class="pos">+${Math.round(b.pit.total*100)}%</b></span><span>CAGR<b class="${b.pit.cagr>=0?'pos':'neg'}">${(b.pit.cagr*100).toFixed(1)}%</b></span><span>MDD<b class="neg">${Math.round(b.pit.mdd*100)}%</b></span><span>Sharpe<b>${b.pit.sharpe}</b></span><span>승률<b>${Math.round(b.pit.win*100)}%</b></span></div>

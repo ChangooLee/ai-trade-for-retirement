@@ -169,6 +169,7 @@ def main():
                 "pl_norm": round(float(tr["pl_norm"]), 5), "entropy": round(float(tr["pers_entropy"]), 3),
                 "turb": None if pd.isna(tr["turb"]) else round(float(tr["turb"]), 4),
                 "rising": bool(tr["d_norm"] > 0),
+                "trend": None if pd.isna(tr["trend"]) else round(float(tr["trend"]), 4),   # 종가/MA50−1 — 방향 게이트
             }
 
     # 오버나이트 단타 (검증: backtest/shortterm_*. 종가 매수 → 익일 시가 매도. 통계는 매 빌드 실데이터 재계산)
@@ -292,7 +293,10 @@ def main():
         "initial_capital": cfg["portfolio"]["initial_capital"], "stocks": stocks, "buy_order": buy_order,
         "legacy_sell": legacy_sell, "tda_buy": tda_buy, "tda_sell": tda_sell,
         "tda_meta": {"has_ripser": bool(HAS_RIPSER), "window": tcfg.get("window", 60),
-                     "embed_dim": tcfg.get("embed_dim", 3), "n": len(tda_df)},
+                     "embed_dim": tcfg.get("embed_dim", 3), "n": len(tda_df),
+                     "exit_trim_pct": float(tcfg.get("exit_trim_pct", 0.75)),
+                     "exit_full_pct": float(tcfg.get("exit_full_pct", 0.85)),
+                     "exit_trim_frac": float(tcfg.get("exit_trim_frac", 0.5))},
         "all_stocks": fetch_all_stocks(auth, asof_str), "broad": broad, "overnight": overnight, "dart": dart_flags,
     }
     tpl = open(TEMPLATE, encoding="utf-8").read()
@@ -321,7 +325,13 @@ def main():
             "exposure": {"target": m, "slots": int(slots), "weight": weight, "mode": exp["mode"]},
             "buy_order": [{"ticker": tk, "name": stocks[tk]["name"], "close": float(stocks[tk]["close"])}
                           for tk in buy_order if tk in stocks and stocks[tk].get("close")],
-            "sell_tickers": sorted(set(legacy_sell) | set(tda_sell)),
+            "sell_tickers": sorted(set(legacy_sell)),     # 추세이탈(20주선) 전량청산 — TDA는 아래 graduated로 분리
+            "tda": {row["ticker"]: {"risk_pct": round(float(row["risk_pct"]), 3),
+                                    "trend": None if pd.isna(row["trend"]) else round(float(row["trend"]), 4)}
+                    for _, row in tda_df.iterrows()} if len(tda_df) else {},
+            "tda_exit": {"trim_pct": float(tcfg.get("exit_trim_pct", 0.75)),
+                         "full_pct": float(tcfg.get("exit_full_pct", 0.85)),
+                         "trim_frac": float(tcfg.get("exit_trim_frac", 0.5))},
             "prices": prices, "calendar": cal,
         }
         _repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

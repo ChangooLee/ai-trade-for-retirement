@@ -87,3 +87,7 @@ tda:
   risk_lambda: 0.7    # score = dir - λ·risk
   n_buy: 8            # TDA 매수 후보 표시 수
   n_sell: 8           # TDA 매도/위험 후보 표시 수
+  # 청산: 방향 게이트 + 점진적 축소 (검증 tda_gated_exit_backtest / 문헌: TDA는 변동성 신호라 추세하향 동시일 때만 매도)
+  exit_trim_pct: 0.75   # risk 백분위 ≥ 이 값 AND 추세하향(종가<MA50) → 절반 축소(trim)
+  exit_full_pct: 0.85   # risk 백분위 ≥ 이 값 AND 추세하향 → 전량 청산(exit). 추세상향이면 어느 경우도 '주의'만(보유)
+  exit_trim_frac: 0.5   # trim 시 매도 비중

@@ -135,12 +135,34 @@ def compute_tda_signals(daily_ind, asof, cfg):
 
 
 def tda_buy_sell(df, n_buy=8, n_sell=8):
-    """매수 = 추세>0 & 위상리스크<중앙값, score 상위. 매도 = 위상리스크 상위25%, 위험-방향 상위."""
+    """매수 = 추세>0 & 위상리스크<중앙값, score 상위.
+    매도 = 위상리스크 상위25% AND 추세 하향(종가<MA50) — 방향 게이트(검증 tda_gated_exit_backtest).
+    고위험이라도 상승 추세면 매도하지 않음(변동성 큰 승자 조기청산 방지)."""
     if df is None or df.empty:
         return [], []
     risk_med = df["risk"].median()
     buy = df[(df["dir"] > 0) & (df["risk"] < risk_med)].sort_values("score", ascending=False)
     q75 = df["risk"].quantile(0.75)
     sell = df.assign(sell_score=df["risk"] - 0.5 * df["dir"])
-    sell = sell[sell["risk"] >= q75].sort_values("sell_score", ascending=False)
+    sell = sell[(sell["risk"] >= q75) & (sell["trend"] < 0)].sort_values("sell_score", ascending=False)
     return list(buy.head(n_buy)["ticker"]), list(sell.head(n_sell)["ticker"])
+
+
+def tda_exit_action(risk_pct, trend, trim_pct=0.75, full_pct=0.85, trim_frac=0.5):
+    """보유 종목 TDA 청산 액션 — 방향 게이트 + 점진적 축소.
+
+    반환 (action, frac):
+      hold    : 위상리스크 낮음 → TDA 청산 없음(시간/추세이탈 청산만 적용)
+      caution : 고위험이나 추세 상향(종가≥MA50) → 보유 + 변동성 주의 (매도 안 함 — 승자 조기청산 방지)
+      trim    : 고위험 AND 추세 하향 → frac 만큼 부분 축소
+      exit    : 초고위험 AND 추세 하향 → 전량 청산
+    근거: TDA risk는 '변동성/난류' 신호로 방향 무관(부호맹목). 추세 하향과 동시일 때만 매도해야
+          하락은 회피하되 변동성 큰 상승주를 자르지 않음.
+    """
+    if risk_pct is None or risk_pct < trim_pct:
+        return ("hold", 0.0)
+    if trend is None or trend >= 0:          # 추세 상향(또는 불명) → 보유, 주의만
+        return ("caution", 0.0)
+    if risk_pct >= full_pct:
+        return ("exit", 1.0)
+    return ("trim", trim_frac)

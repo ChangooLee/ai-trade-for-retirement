@@ -26,6 +26,18 @@ def _trading_days_between(cal, d1, d2):
     return sum(1 for d in cal if d1 < d <= d2)
 
 
+def _tda_action(risk_pct, trend, trim_pct=0.75, full_pct=0.85, trim_frac=0.5):
+    """방향게이트+점진적 축소 TDA 청산 액션 — app.indicators.tda.tda_exit_action 과 동일(무의존성 인라인 복제).
+    hold/caution(보유) / trim(부분축소) / exit(전량). 추세 상향이면 고위험이어도 매도 안 함."""
+    if risk_pct is None or risk_pct < trim_pct:
+        return ("hold", 0.0)
+    if trend is None or trend >= 0:
+        return ("caution", 0.0)
+    if risk_pct >= full_pct:
+        return ("exit", 1.0)
+    return ("trim", trim_frac)
+
+
 def _price(sig, tk, fallback):
     p = sig.get("prices", {}).get(tk)
     return float(p) if p and p > 0 else (float(fallback) if fallback else 0.0)
@@ -47,7 +59,10 @@ def execute_day(state, day, sig):
     cost = float(sig.get("cost", 0.0035))
     cal = sig.get("calendar", [])
     hold_days = int(sig.get("hold_days", 40))
-    sells_set = set(sig.get("sell_tickers", []))
+    sells_set = set(sig.get("sell_tickers", []))     # 추세이탈(20주선) — 전량청산
+    tda_map = sig.get("tda", {})
+    te = sig.get("tda_exit", {})
+    trim_pct = float(te.get("trim_pct", 0.75)); full_pct = float(te.get("full_pct", 0.85)); trim_frac = float(te.get("trim_frac", 0.5))
     trades = []
 
     # 보유 종목 최신가 갱신(가능하면)
@@ -56,23 +71,36 @@ def execute_day(state, day, sig):
         if px and px > 0:
             p["last_price"] = float(px)
 
-    # 1) 청산
+    def _record_sell(p, sh, px, held, reason):
+        proceeds = sh * px * (1 - cost / 2)
+        buy_cost = p["entry_price"] * sh * (1 + cost / 2)
+        trades.append({"ticker": p["ticker"], "name": p.get("name", p["ticker"]),
+                       "entry_date": p["entry_date"], "entry_price": p["entry_price"],
+                       "exit_date": day, "exit_price": px, "shares": sh,
+                       "pnl": round(proceeds - buy_cost), "ret": (px / p["entry_price"] - 1) if p["entry_price"] else 0.0,
+                       "days": held, "reason": reason})
+        return proceeds
+
+    # 1) 청산 — 시간/추세이탈=전량, TDA=방향게이트 점진적 축소(고위험+추세하향만, 상승 중이면 보유)
     keep = []
     for p in positions:
         held = _trading_days_between(cal, p["entry_date"], day)
-        reason = "시간청산(40일)" if held >= hold_days else ("매도신호" if p["ticker"] in sells_set else None)
-        if reason:
-            px = _price(sig, p["ticker"], p.get("last_price") or p["entry_price"])
-            proceeds = p["shares"] * px * (1 - cost / 2)
-            buy_cost = p["entry_price"] * p["shares"] * (1 + cost / 2)
-            cash += proceeds
-            trades.append({"ticker": p["ticker"], "name": p.get("name", p["ticker"]),
-                           "entry_date": p["entry_date"], "entry_price": p["entry_price"],
-                           "exit_date": day, "exit_price": px, "shares": p["shares"],
-                           "pnl": round(proceeds - buy_cost), "ret": (px / p["entry_price"] - 1) if p["entry_price"] else 0.0,
-                           "days": held, "reason": reason})
-        else:
-            keep.append(p)
+        px = _price(sig, p["ticker"], p.get("last_price") or p["entry_price"])
+        full = "시간청산(40일)" if held >= hold_days else ("추세이탈(20주선)" if p["ticker"] in sells_set else None)
+        if full:
+            cash += _record_sell(p, p["shares"], px, held, full)
+            continue
+        t = tda_map.get(p["ticker"]) or {}
+        action, frac = _tda_action(t.get("risk_pct"), t.get("trend"), trim_pct, full_pct, trim_frac)
+        if action == "exit":
+            cash += _record_sell(p, p["shares"], px, held, "TDA 청산(고위험+추세하향)")
+            continue
+        if action == "trim" and not p.get("trimmed"):
+            sh = int(p["shares"] * frac)
+            if sh > 0:
+                cash += _record_sell(p, sh, px, held, "TDA 축소(부분)")
+                p["shares"] -= sh; p["trimmed"] = True
+        keep.append(p)     # caution/hold/축소후 잔량 → 보유 유지
     positions = keep
 
     # 2) 서킷브레이커 (당월 손익 ≤ −3%×투자금)
