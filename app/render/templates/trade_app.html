@@ -74,6 +74,9 @@ details{margin-top:6px}summary{cursor:pointer;color:#9cd6ff;font-size:12.5px}
 #authBar .lbtn:hover{background:#1b2c4d}
 #authBar a{color:#9aa7b8;text-decoration:none}
 @media(max-width:640px){#authBar{position:static;justify-content:flex-end;margin:4px 0 8px}}
+.modalOv{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
+.modalBox{background:#0f1828;border:1px solid var(--line);border-radius:12px;max-width:460px;width:100%;padding:18px 20px;color:#e6e9ee}
+.modalCol{flex:1;background:#13203a;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12.5px}
 </style><script src="https://accounts.google.com/gsi/client" async defer></script></head><body><div class="wrap">
 
 <h1>📈 LEADERS DESK</h1>
@@ -188,46 +191,108 @@ function save(){ saveLocal(); pushToCloud(); }
 
 // ---- 구글 로그인 + 기기 간 동기화 (자체 서버 백엔드) ----
 const GCID = (DATA.meta.google_client_id||"").trim();   // OAuth 클라이언트 ID(공개값) — 빌드시 주입
-const SYNC_API = "/trading/api/userdata";
-let idToken=null, gUser=null, pushTimer=null;
+const SYNC_API = "/trading/api/userdata", LSTOK = "leaders_gtok_v1";
+let idToken=null, gUser=null, pushTimer=null, _dirty=false;
 const syncEnabled = () => !!GCID;
 function jwtPayload(t){ try{ return JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); }catch(e){ return {}; } }
-window.onGoogleCredential = async (resp)=>{
-  idToken = resp.credential; const p = jwtPayload(idToken);
-  gUser = {name:p.name, email:p.email, exp:p.exp};
-  await pullFromCloud(); renderAuth();
-};
-async function pullFromCloud(){
+function tokenValid(t){ const p=jwtPayload(t); return !!(p && p.exp && p.exp*1000 > Date.now()+30000); }  // 만료 30s 전까지 유효
+// 데이터 스냅샷·비교 (충돌 판정용)
+function localSnapshot(){ return {holdings, cashflows, tradelog}; }
+function hasData(d){
+  if(!d) return false;
+  if(Array.isArray(d.holdings)&&d.holdings.length) return true;
+  if(Array.isArray(d.tradelog)&&d.tradelog.length) return true;
+  if(Array.isArray(d.cashflows)){
+    if(d.cashflows.some(c=>!c.initial)) return true;
+    const init=d.cashflows.find(c=>c.initial);
+    if(init && (+init.amount||0)!==0 && (+init.amount||0)!==DATA.initial_capital) return true;
+  }
+  return false;
+}
+const normData = d => JSON.stringify({h:d.holdings||[], c:d.cashflows||[], t:d.tradelog||[]});
+function applyCloudData(d){
+  if(Array.isArray(d.holdings)) holdings=d.holdings;
+  if(Array.isArray(d.cashflows)&&d.cashflows.length) cashflows=d.cashflows;
+  if(Array.isArray(d.tradelog)) tradelog=d.tradelog;
+  if(d.eqhist&&typeof d.eqhist==="object") localStorage.setItem(LSE, JSON.stringify(d.eqhist));
+  saveLocal(); renderHoldInput(); render();   // 재푸시 안 함
+}
+function flagSynced(){ const b=document.getElementById("syncState"); if(b) b.textContent="동기화됨 ✓"; }
+function clearSession(){ idToken=null; gUser=null; try{localStorage.removeItem(LSTOK);}catch(e){} renderAuth(); }
+
+async function setSession(token){
+  idToken=token; const p=jwtPayload(token); gUser={name:p.name, email:p.email, exp:p.exp};
+  try{ localStorage.setItem(LSTOK, token); }catch(e){}
+  renderAuth(); await reconcile();
+}
+window.onGoogleCredential = async (resp)=>{ await setSession(resp.credential); };
+
+// 로그인/복원 직후: 로컬 vs 계정(클라우드) 비교 → 동기화. 둘 다 데이터가 있고 다르면 사용자에게 질문.
+async function reconcile(){
   if(!idToken) return;
+  let cloud=null;
   try{
-    const r = await fetch(SYNC_API, {headers:{Authorization:"Bearer "+idToken}});
-    if(r.status===401){ idToken=null; gUser=null; renderAuth(); return; }
-    if(!r.ok) return;
-    const d = await r.json();
-    if(d && (Array.isArray(d.holdings)||Array.isArray(d.cashflows)||Array.isArray(d.tradelog))){
-      if(Array.isArray(d.holdings)) holdings=d.holdings;
-      if(Array.isArray(d.cashflows)&&d.cashflows.length) cashflows=d.cashflows;
-      if(Array.isArray(d.tradelog)) tradelog=d.tradelog;
-      if(d.eqhist&&typeof d.eqhist==="object") localStorage.setItem(LSE, JSON.stringify(d.eqhist));
-      saveLocal(); renderHoldInput(); render();   // 클라우드 → 화면 반영(재푸시 안 함)
-    }
-  }catch(e){ console.warn("동기화 불러오기 실패", e); }
+    const r=await fetch(SYNC_API,{headers:{Authorization:"Bearer "+idToken}});
+    if(r.status===401){ clearSession(); return; }
+    if(r.ok) cloud=await r.json();
+  }catch(e){ console.warn("동기화 조회 실패",e); return; }
+  cloud=cloud||{};
+  const local=localSnapshot(), lHas=hasData(local), cHas=hasData(cloud);
+  if(cHas && !lHas){ applyCloudData(cloud); flagSynced(); return; }       // 계정만 있음 → 불러오기
+  if(lHas && !cHas){ pushToCloud(true); flagSynced(); return; }           // 브라우저만 있음 → 업로드
+  if(lHas && cHas){
+    if(normData(local)===normData(cloud)){ flagSynced(); return; }        // 같음 → 끝
+    const choice = await showSyncConflict(local, cloud);                  // 다름 → 질문
+    if(choice==="cloud") applyCloudData(cloud);
+    else if(choice==="local") pushToCloud(true);
+    flagSynced();
+  }
 }
-function pushToCloud(){
+function pushToCloud(now){ if(!idToken) return; _dirty=true; clearTimeout(pushTimer); pushTimer=setTimeout(doPush, now?0:500); }
+async function doPush(){
   if(!idToken) return;
-  clearTimeout(pushTimer);
-  pushTimer = setTimeout(async ()=>{
-    let eqhist={}; try{ eqhist=JSON.parse(localStorage.getItem(LSE)||"{}"); }catch(e){}
-    try{
-      const r = await fetch(SYNC_API, {method:"PUT",
-        headers:{Authorization:"Bearer "+idToken, "Content-Type":"application/json"},
-        body: JSON.stringify({holdings, cashflows, tradelog, eqhist})});
-      if(r.status===401){ idToken=null; gUser=null; renderAuth(); }
-      else { const b=document.getElementById("syncState"); if(b) b.textContent="저장됨 ✓"; }
-    }catch(e){ console.warn("동기화 저장 실패", e); }
-  }, 800);
+  let eqhist={}; try{ eqhist=JSON.parse(localStorage.getItem(LSE)||"{}"); }catch(e){}
+  try{
+    const r=await fetch(SYNC_API,{method:"PUT",
+      headers:{Authorization:"Bearer "+idToken,"Content-Type":"application/json"},
+      body:JSON.stringify({holdings, cashflows, tradelog, eqhist})});
+    if(r.status===401){ clearSession(); }
+    else { _dirty=false; const b=document.getElementById("syncState"); if(b) b.textContent="저장됨 ✓"; }
+  }catch(e){ console.warn("동기화 저장 실패",e); }
 }
-window.gLogout = ()=>{ try{ google.accounts.id.disableAutoSelect(); }catch(e){} idToken=null; gUser=null; renderAuth(); };
+// 충돌 모달 — 어느 데이터를 쓸지 선택
+function _sumcf(d){ return (d.cashflows||[]).reduce((a,c)=>a+(+c.amount||0),0); }
+function showSyncConflict(local, cloud){
+  const sm = d => `보유 ${(d.holdings||[]).length}종목 · 청산 ${(d.tradelog||[]).length}건 · 원금 ${W(_sumcf(d))}`;
+  return new Promise(resolve=>{
+    const ov=document.createElement("div"); ov.className="modalOv";
+    ov.innerHTML=`<div class="modalBox">
+      <h3 style="margin:0 0 8px">🔁 데이터가 다릅니다 — 어느 것을 쓸까요?</h3>
+      <div class="sub" style="margin-bottom:12px">이 브라우저와 로그인 계정에 저장된 내용이 서로 다릅니다. 한쪽을 선택하면 다른 쪽을 덮어씁니다.</div>
+      <div style="display:flex;gap:10px;margin-bottom:14px">
+        <div class="modalCol"><div class="sub">이 브라우저(현재)</div><div>${sm(local)}</div></div>
+        <div class="modalCol"><div class="sub">로그인 계정(클라우드)</div><div>${sm(cloud)}</div></div></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn" id="scLocal">이 브라우저 데이터 사용</button>
+        <button class="btn" id="scCloud" style="background:#1b3a6b;border-color:#2a5298">계정 데이터 사용</button></div>
+      <div class="sub" style="margin-top:8px">※ 선택 후 양쪽이 같아지고, 이후 변경은 자동 동기화됩니다.</div></div>`;
+    document.body.appendChild(ov);
+    const done=c=>{ ov.remove(); resolve(c); };
+    ov.querySelector("#scLocal").onclick=()=>done("local");
+    ov.querySelector("#scCloud").onclick=()=>done("cloud");
+    ov.addEventListener("click",e=>{ if(e.target===ov) done("cloud"); });   // 배경 클릭 = 계정 보존(안전)
+  });
+}
+// 페이지 이탈 시 미저장분 keepalive 플러시
+window.addEventListener("beforeunload",()=>{
+  if(idToken && _dirty){
+    let eqhist={}; try{ eqhist=JSON.parse(localStorage.getItem(LSE)||"{}"); }catch(e){}
+    try{ fetch(SYNC_API,{method:"PUT",keepalive:true,
+      headers:{Authorization:"Bearer "+idToken,"Content-Type":"application/json"},
+      body:JSON.stringify({holdings, cashflows, tradelog, eqhist})}); }catch(e){}
+  }
+});
+window.gLogout = ()=>{ try{ google.accounts.id.disableAutoSelect(); }catch(e){} clearSession(); };
 function renderAuth(){
   const el=document.getElementById("authBar"); if(!el) return;
   const badge=document.getElementById("storeBadge");
@@ -255,7 +320,12 @@ function initGoogleButton(){
     google.accounts.id.prompt();   // One Tap
   }catch(e){ console.warn("구글 초기화 실패", e); }
 }
-window.addEventListener("load", ()=>{ if(syncEnabled()) renderAuth(); });
+window.addEventListener("load", ()=>{
+  if(!syncEnabled()) return;
+  let saved=null; try{ saved=localStorage.getItem(LSTOK); }catch(e){}
+  if(saved && tokenValid(saved)){ setSession(saved); }        // 새로고침 시 로그인 유지(토큰 만료 전)
+  else { if(saved){ try{localStorage.removeItem(LSTOK);}catch(e){} } renderAuth(); }  // 만료/없음 → 로그인 버튼(자동 One Tap 시도)
+});
 // ---- 서킷브레이커(월 손실 한도 −3%, 결정 0004 / PIT 검증: 최악월 −14.5%→−6.3%) ----
 const CB_LIMIT = 0.03;
 function eqHist(){ try{ return JSON.parse(localStorage.getItem(LSE)||"{}"); }catch(e){ return {}; } }
