@@ -28,6 +28,7 @@ h2{font-size:15px;margin:22px 0 9px;font-weight:700;letter-spacing:-.2px;color:v
 .cards{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;box-shadow:0 1px 2px rgba(10,11,13,.03)}
 .card.buy{border-left:3px solid var(--buy)}.card.hold{border-left:3px solid var(--line2)}.card.sell{border-left:3px solid var(--up)}.card.imminent{border-left:3px solid #e0a93b}
+.card.pl-profit{border-left:4px solid var(--up)}.card.pl-loss{border-left:4px solid var(--down)}
 .hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}.hd b{font-size:14.5px;font-weight:700}
 .mono{font-family:ui-monospace,"SF Mono",Menlo,monospace;color:var(--mut);font-size:11px}
 .pill{margin-left:auto;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:600;border:1px solid var(--line2);color:var(--ink2)}
@@ -38,7 +39,6 @@ canvas{width:100%;height:150px;display:block;background:var(--panel);border:1px 
 .cl{font-size:10.5px;color:var(--mut);margin:2px 0}.cl b{margin:0 2px}
 .plan{display:grid;grid-template-columns:1fr 1fr;gap:5px 16px;margin:8px 0;font-size:12.5px;background:var(--panel);border-radius:8px;padding:10px 12px}
 .plan b{font-size:13px;color:var(--ink)}.sub{color:var(--mut);font-size:10.5px}.pos{color:var(--up)}.neg{color:var(--down)}
-.pldot{font-size:9px;vertical-align:middle;margin-right:6px;line-height:1}
 .form{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
 .form label{font-size:11px;color:var(--mut);display:block;margin-bottom:4px;font-weight:500}
 .form input,.form select,select,input[type=date],input[type=number]{background:var(--card);border:1px solid var(--line2);color:var(--ink);border-radius:8px;padding:8px 11px;font-size:13px;font-family:inherit}
@@ -771,7 +771,7 @@ function render(){
   const hc=[], sc=[];
   pf.open.forEach(h=>{
     if(!h.analyzed){   // 유니버스 외 — 가격·손익만 추적
-      hc.push(`<div class="card hold" style="cursor:pointer" onclick="sellPopup('${h.ticker}','${h.entry_date}')"><div class="hd"><span class="pldot ${h.ret>=0?'pos':'neg'}" title="${h.ret>=0?'수익 중':'손실 중'}">●</span><b>${esc(h.name||h.ticker)}</b> <span class="mono">${h.ticker}·${h.market||''}</span>
+      hc.push(`<div class="card hold ${h.ret>=0?'pl-profit':'pl-loss'}" style="cursor:pointer" onclick="sellPopup('${h.ticker}','${h.entry_date}')"><div class="hd"><b>${esc(h.name||h.ticker)}</b> <span class="mono">${h.ticker}·${h.market||''}</span>
         <span class="pill hold">유니버스 외 · ${(h.weight*100).toFixed(1)}%</span>
         <button class="btn" onclick="event.stopPropagation();sellPopup('${h.ticker}','${h.entry_date}')">매도</button>
         <button class="btn x" onclick="event.stopPropagation();del('${h.ticker}','${h.entry_date}')">삭제</button></div>
@@ -793,8 +793,8 @@ function render(){
     const reason = h.status==="매도예정" ? `<div class="srow"><b class="neg">40거래일 시간청산 도달 — 다음 거래일 시가 매도</b></div>`
       : caution ? `<div class="srow"><b style="color:#e0a93b">변동성 주의(참고·보유) — 위상 고위험(상위 ${Math.round(h.tda.risk_pct*100)}%)${downtrend?' · 추세 하향':''}. <span class="sub">TDA 청산은 백테스트상 수익을 깎아 매도 트리거로 쓰지 않음 — 변동성 인지용</span></b></div>` : "";
     const tdaLine = h.tda ? `<div>TDA 위상리스크 <b class="${caution&&downtrend?'neg':''}">${h.tda.risk>=0?'+':''}${h.tda.risk}</b> <span class="sub">상위 ${Math.round(h.tda.risk_pct*100)}% 위험${trd} (참고)</span></div>` : "";
-    const card=`<div class="card ${cls}" style="cursor:pointer" onclick="sellPopup('${h.ticker}','${h.entry_date}')">
-      <div class="hd"><span class="pldot ${h.ret>=0?'pos':'neg'}" title="${h.ret>=0?'수익 중':'손실 중'}">●</span><b>${esc(h.name||h.ticker)}</b> <span class="mono">${h.ticker}·${h.market||''}·${h.sector||''}</span>
+    const card=`<div class="card ${cls} ${h.ret>=0?'pl-profit':'pl-loss'}" style="cursor:pointer" onclick="sellPopup('${h.ticker}','${h.entry_date}')">
+      <div class="hd"><b>${esc(h.name||h.ticker)}</b> <span class="mono">${h.ticker}·${h.market||''}·${h.sector||''}</span>
         <span class="pill ${pill}">${h.status} · ${(h.weight*100).toFixed(1)}%</span>
         <button class="btn" onclick="event.stopPropagation();sellPopup('${h.ticker}','${h.entry_date}')">매도</button>
         <button class="btn x" onclick="event.stopPropagation();del('${h.ticker}','${h.entry_date}')">삭제</button></div>
