@@ -18,7 +18,10 @@ SIG_PATH = os.path.join(_REPO, "state", "daily_signals.json")
 def main():
     if not os.path.exists(SIG_PATH):
         print("시그널 파일 없음 — build_webapp 먼저 실행 필요. 건너뜀.", file=sys.stderr); return
-    sig = json.load(open(SIG_PATH, encoding="utf-8"))
+    try:
+        sig = json.load(open(SIG_PATH, encoding="utf-8"))
+    except (ValueError, OSError) as e:
+        print(f"시그널 파일 손상/읽기 실패 — 건너뜀(다음 빌드에 복구): {e}", file=sys.stderr); return
     asof = sig.get("asof")
     if not asof:
         print("시그널에 asof 없음 — 건너뜀.", file=sys.stderr); return

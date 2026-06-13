@@ -327,7 +327,10 @@ def main():
         _repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         _sp = os.path.join(_repo, "state", "daily_signals.json")
         os.makedirs(os.path.dirname(_sp), exist_ok=True)
-        json.dump(sig, open(_sp, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
+        _tmp = _sp + ".tmp"
+        with open(_tmp, "w", encoding="utf-8") as _f:
+            json.dump(sig, _f, ensure_ascii=False, separators=(",", ":"))
+        os.replace(_tmp, _sp)   # 원자적 교체 — 크래시/동시읽기 시 손상 방지
         print(f"시그널: {_sp} | 매수후보 {len(sig['buy_order'])} · 매도 {len(sig['sell_tickers'])} · 슬롯 {slots} · 가격 {len(prices)}", file=sys.stderr)
     except Exception as e:
         print(f"시그널 산출 실패(시뮬 영향): {e}", file=sys.stderr)

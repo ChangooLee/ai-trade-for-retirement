@@ -358,6 +358,7 @@ window.simStart=async ()=>{
 window.simReset=async ()=>{
   if(!confirm("시뮬레이션을 리셋하고 오늘부터 다시 시작할까요? (기존 시뮬 기록 삭제)")) return;
   try{ const r=await fetch(SIM_API+"/reset",{method:"POST",headers:{Authorization:"Bearer "+idToken,"Content-Type":"application/json"},body:JSON.stringify({})});
+    if(r.status===401){ clearSession(); alert("다시 로그인해주세요."); return; }
     if(r.ok) simData=await r.json(); renderSim();
   }catch(e){ alert("리셋 실패: "+e); } };
 function renderAuth(){

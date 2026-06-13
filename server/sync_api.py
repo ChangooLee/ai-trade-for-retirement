@@ -85,8 +85,11 @@ class Handler(BaseHTTPRequestHandler):
         return verify(self.headers)   # {"sub","email"} 또는 None
 
     def _body(self):
-        n = int(self.headers.get("Content-Length", "0") or 0)
-        if n > MAX_BODY:
+        try:
+            n = int((self.headers.get("Content-Length", "0") or "0").strip())
+        except (ValueError, TypeError):
+            return None
+        if n < 0 or n > MAX_BODY:
             return None
         raw = self.rfile.read(n) if n else b"{}"
         try:
