@@ -30,7 +30,11 @@ canvas{width:100%;height:150px;display:block;background:#0c1424;border-radius:8p
 .plan b{font-size:13.5px}.sub{color:var(--mut);font-size:10.5px}.pos{color:#34d399}.neg{color:#fca5a5}
 .form{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
 .form label{font-size:11px;color:var(--mut);display:block;margin-bottom:3px}
-.form input{background:#0c1424;border:1px solid var(--line);color:#e6e9ee;border-radius:8px;padding:8px 10px;font-size:13px}
+.form input,.form select,select{background:#0c1424;border:1px solid var(--line);color:#e6e9ee;border-radius:8px;padding:8px 10px;font-size:13px}
+.form select,select{-webkit-appearance:none;appearance:none;cursor:pointer;padding-right:26px;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0l5 6 5-6z' fill='%239aa7b8'/></svg>");
+  background-repeat:no-repeat;background-position:right 9px center}
+.form select option,select option{background:#0c1424;color:#e6e9ee}
 #searchWrap{position:relative}#search{width:230px}
 #sugg{position:absolute;top:62px;left:0;width:230px;max-height:240px;overflow:auto;background:#0c1424;border:1px solid var(--line);border-radius:8px;z-index:10;display:none}
 #sugg div{padding:7px 10px;cursor:pointer;font-size:12.5px;border-bottom:1px solid var(--line)}#sugg div:hover{background:#13224a}
@@ -134,6 +138,18 @@ details{margin-top:6px}summary{cursor:pointer;color:#9cd6ff;font-size:12.5px}
 <h2>🤖 알고리즘 시뮬레이터 <span class="sub" style="font-weight:400">(우리 알고리즘으로 자동 페이퍼 트레이딩)</span></h2>
 <div class="dxline"><span class="lab">자동 페이퍼</span>투자금액을 넣고 <b>시작</b>하면 그날부터 <b>매일 배치</b>가 우리 알고리즘(시총 top400 F리더∩20주선 눌림 · 40거래일/TDA 청산 · D4 노출 · 월 −3% 한도)으로 자동 매매하고 손익을 누적합니다. <b>로그인 사용자만</b> 본인 서버에서 운영됩니다. 리셋하면 그날부터 다시 시작.</div>
 <div id="simSection"></div>
+
+<h2>📈 기간 백테스트 <span class="sub" style="font-weight:400">(과거 구간에 이 알고리즘을 돌려보기)</span></h2>
+<div class="dxline"><span class="lab">과거 검증</span>시작·종료일과 공격성·손실한도를 골라 <b>실행</b>하면, 그 구간에 우리 알고리즘이 <b>어떤 종목을 사고팔아 얼마를 벌었는지</b>(체결 내역·손익·에쿼티 곡선)를 보여줍니다. 생존편향 제거 PIT 조정가 · 로그인 불필요.</div>
+<div class="form" style="margin-bottom:8px">
+  <div><label>시작일</label><input id="btStart" type="date" value="2024-01-01" style="width:150px"></div>
+  <div><label>종료일</label><input id="btEnd" type="date" value="2024-12-31" style="width:150px"></div>
+  <div><label>투자금액(원)</label><input id="btCap" type="number" value="10000000" style="width:140px"></div>
+  <div><label>노출(공격성)</label><select id="btMult"><option value="1.0">기본 ×1.0</option><option value="1.5">적극 ×1.5</option><option value="2.0">공격 ×2.0</option><option value="2.5">최대 ×2.5</option></select></div>
+  <div><label>월 손실한도</label><select id="btCb"><option value="0.03">−3%</option><option value="0.05">−5%</option><option value="0.08">−8%</option><option value="0">끔</option></select></div>
+  <button class="btn" style="background:#1b3a6b;border-color:#2a5298" onclick="runBacktest()">▶ 백테스트 실행</button>
+</div>
+<div id="btResult"></div>
 
 <h2>🧭 종목 발굴</h2>
 <div class="cmp">
@@ -340,8 +356,8 @@ async function renderSim(){
       `</tbody></table></div>`:'<div class="sub" style="margin-top:6px">아직 청산(매도)된 거래가 없습니다 — 보유 후 청산 시 기록됩니다.</div>'}</div>`;
   drawSimChart(d.equity_curve||[], d.investment);
 }
-function drawSimChart(curve, inv){
-  const cv=document.getElementById("simChart"); if(!cv||!curve.length) return;
+function drawSimChart(curve, inv, cid){
+  const cv=document.getElementById(cid||"simChart"); if(!cv||!curve.length) return;
   const W0=cv.clientWidth||600, H0=120, dpr=window.devicePixelRatio||1;
   cv.width=W0*dpr; cv.height=H0*dpr; const ctx=cv.getContext("2d"); ctx.scale(dpr,dpr); ctx.clearRect(0,0,W0,H0);
   const ys=curve.map(p=>p.equity), lo=Math.min(inv,...ys), hi=Math.max(inv,...ys), rg=(hi-lo)||1;
@@ -350,6 +366,33 @@ function drawSimChart(curve, inv){
   ctx.strokeStyle = ys[ys.length-1]>=inv?"#34d399":"#ef4444"; ctx.lineWidth=1.6; ctx.beginPath();
   curve.forEach((p,i)=>{ const x=X(i),y=Y(p.equity); i?ctx.lineTo(x,y):ctx.moveTo(x,y); }); ctx.stroke();
 }
+window.runBacktest=async ()=>{
+  const el=document.getElementById("btResult");
+  const start=document.getElementById("btStart").value, end=document.getElementById("btEnd").value;
+  const cap=+document.getElementById("btCap").value||10000000;
+  const mult=document.getElementById("btMult").value, cb=document.getElementById("btCb").value;
+  if(!start||!end||start>=end){ alert("시작일이 종료일보다 빨라야 합니다."); return; }
+  el.innerHTML='<div class="note">⏳ 백테스트 실행 중… (몇 초 소요)</div>';
+  try{
+    const q=`?start=${start}&end=${end}&capital=${cap}&exposure_mult=${mult}&cb_limit=${cb}`;
+    const r=await fetch("/trading/api/backtest"+q);
+    const d=await r.json();
+    if(!r.ok||d.error){ el.innerHTML=`<div class="warn">백테스트 실패: ${esc(d.error||('HTTP '+r.status))}</div>`; return; }
+    const s=d.summary, cls=s.total_pnl>=0?'pos':'neg';
+    el.innerHTML=`<div class="card">
+      <div class="summary-row">
+        <div>기간<b>${s.start}~${s.end} (${s.days}거래일)</b></div><div>투자금<b>${W(s.capital)}</b></div>
+        <div>최종 평가자산<b>${W(s.final_equity)}</b></div><div>총손익<b class="${cls}">${W(s.total_pnl)} (${P(s.total_ret)})</b></div>
+        <div>MDD<b class="neg">${P(s.mdd)}</b></div><div>체결<b>${s.n_trades}건 · 승률 ${Math.round(s.win_rate*100)}%</b></div>
+        <div>설정<b>노출 ×${s.exposure_mult} · 한도 ${s.cb_limit>0?'−'+Math.round(s.cb_limit*100)+'%':'끔'}</b></div></div>
+      <canvas id="btChart" style="width:100%;height:130px;margin-top:8px"></canvas>
+      ${s.n_trades?`<div style="margin-top:8px"><b class="sub">체결 내역${s.n_trades>200?' (최근 200건)':''}</b>
+        <table><thead><tr><th>종목</th><th>진입→청산</th><th class="num">매수→매도가</th><th class="num">수량</th><th class="num">손익</th><th class="num">수익률</th><th>사유</th></tr></thead><tbody>`+
+        d.trades.map(t=>`<tr><td><b>${esc(t.name||t.ticker)}</b> <span class="mono">${t.ticker}</span></td><td>${t.entry_date}→${t.exit_date}</td><td class="num">${W(t.entry_price)}→${W(t.exit_price)}</td><td class="num">${t.shares}주</td><td class="num ${t.pnl>=0?'pos':'neg'}">${W(t.pnl)}</td><td class="num ${t.ret>=0?'pos':'neg'}">${P(t.ret)}</td><td class="sub">${esc(t.reason||'')}</td></tr>`).join("")+
+        `</tbody></table></div>`:'<div class="sub" style="margin-top:6px">청산된 거래 없음(기간이 짧거나 미청산).</div>'}</div>`;
+    drawSimChart(d.equity_curve||[], s.capital, "btChart");
+  }catch(e){ el.innerHTML=`<div class="warn">백테스트 오류: ${esc(""+e)}</div>`; }
+};
 window.simStartForm=function(prefill){
   const el=document.getElementById("simSection"); if(!el) return;
   const d = (prefill && simData) ? simData : null;

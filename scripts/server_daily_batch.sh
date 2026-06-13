@@ -20,6 +20,8 @@ LOG="$ROOT/logs/batch_$(date +%Y%m%d).log"
   rc=$?
   echo "-- 4) 활성 시뮬레이션 일별 전진(로그인 사용자별 페이퍼 매매)"
   "$PY" -m app.batch.run_sims
+  echo "-- 5) 기간 백테스트 아카이브 증분 갱신(state/bt_days.json·bt_prices.parquet)"
+  "$PY" -m app.batch.build_bt_archive
   echo "==== $(date '+%F %T') 종료 (rc=$rc) ===="
 } >> "$LOG" 2>&1
 # 로그 30일 보관

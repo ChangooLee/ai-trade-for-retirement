@@ -120,7 +120,34 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._send(500, {"error": str(e)})
             return self._send(200, res)
+        if path == "/api/backtest":
+            return self._backtest()
         return self._send(404, {"error": "not found"})
+
+    def _backtest(self):
+        import urllib.parse, subprocess, re as _re
+        q = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+        g = lambda k, d: (q.get(k) or [d])[0]
+        start, end = g("start", "2024-01-01"), g("end", "2024-12-31")
+        if not (_re.match(r"^\d{4}-\d{2}-\d{2}$", start) and _re.match(r"^\d{4}-\d{2}-\d{2}$", end)):
+            return self._send(400, {"error": "날짜 형식 오류(YYYY-MM-DD)"})
+        try:
+            cap = float(g("capital", "10000000")); mult = float(g("exposure_mult", "1.0")); cb = float(g("cb_limit", "0.03"))
+        except ValueError:
+            return self._send(400, {"error": "파라미터 오류"})
+        if not (10000 <= cap <= 100_000_000_000):
+            return self._send(400, {"error": "투자금 범위 오류"})
+        cmd = [sys.executable, "-m", "app.sim.backtest_cli", "--start", start, "--end", end,
+               "--capital", str(cap), "--exposure-mult", str(mult), "--cb-limit", str(cb)]
+        try:
+            p = subprocess.run(cmd, cwd=os.path.join(ROOT, ".."), capture_output=True, text=True, timeout=60)
+            lines = [ln for ln in (p.stdout or "").splitlines() if ln.strip()]
+            out = json.loads(lines[-1]) if lines else {"error": "결과 없음"}
+        except subprocess.TimeoutExpired:
+            return self._send(504, {"error": "백테스트 시간 초과"})
+        except Exception as e:
+            return self._send(500, {"error": str(e)})
+        return self._send(200, out)
 
     def do_PUT(self):
         if self._path() != "/api/userdata":
