@@ -304,6 +304,34 @@ def main():
           f"유니버스 {len(uni)} | 모멘텀 매수 {len(buy_order)}/이탈 {len(legacy_sell)} | "
           f"TDA 매수 {len(tda_buy)}/매도 {len(tda_sell)} (ripser={HAS_RIPSER}) | 종목 {len(stocks)}", file=sys.stderr)
 
+    # ---- 시뮬레이터용 일별 시그널 산출 (state/daily_signals.json) ----
+    try:
+        import math as _math
+        m = exp["target_exposure"]
+        slots = min(cfg["sizing"]["max_positions"], _math.ceil(m / cfg["sizing"]["base_slot_weight"])) if m > 0 else 0
+        weight = (m / slots) if slots > 0 else 0.0
+        prices = {tk: float(s["close"]) for tk, s in stocks.items() if s.get("close")}
+        for tk, b in (broad or {}).items():            # 보유가 유니버스 이탈해도 평가 가능하도록 브로드 가격 포함
+            if b.get("close"):
+                prices.setdefault(tk, float(b["close"]))
+        sig = {
+            "asof": str(asof.date()), "next_day": str(nxt.date()),
+            "hold_days": int(cfg["holding"]["max_holding_days"]),
+            "cost": float(cfg["cost"]["assumed_round_trip_cost"]),
+            "exposure": {"target": m, "slots": int(slots), "weight": weight, "mode": exp["mode"]},
+            "buy_order": [{"ticker": tk, "name": stocks[tk]["name"], "close": float(stocks[tk]["close"])}
+                          for tk in buy_order if tk in stocks and stocks[tk].get("close")],
+            "sell_tickers": sorted(set(legacy_sell) | set(tda_sell)),
+            "prices": prices, "calendar": cal,
+        }
+        _repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        _sp = os.path.join(_repo, "state", "daily_signals.json")
+        os.makedirs(os.path.dirname(_sp), exist_ok=True)
+        json.dump(sig, open(_sp, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
+        print(f"시그널: {_sp} | 매수후보 {len(sig['buy_order'])} · 매도 {len(sig['sell_tickers'])} · 슬롯 {slots} · 가격 {len(prices)}", file=sys.stderr)
+    except Exception as e:
+        print(f"시그널 산출 실패(시뮬 영향): {e}", file=sys.stderr)
+
 
 if __name__ == "__main__":
     main()

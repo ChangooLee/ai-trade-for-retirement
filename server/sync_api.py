@@ -40,13 +40,32 @@ def verify(headers):
         if info.get("iss") not in ("accounts.google.com", "https://accounts.google.com"):
             return None
         sub = str(info.get("sub", ""))
-        return sub if sub.isdigit() else None
+        if not sub.isdigit():
+            return None
+        return {"sub": sub, "email": info.get("email", "")}
     except Exception:
         return None
 
 
 def path_for(sub):
     return os.path.join(DATA_DIR, f"{sub}.json")     # sub는 숫자 검증됨 → 경로 주입 불가
+
+
+# ---- 시뮬레이터 DB (지연 임포트: google-auth 없는 환경에서도 모듈 로드 가능) ----
+def _simdb():
+    import importlib
+    sys.path.insert(0, os.path.join(ROOT, ".."))
+    return importlib.import_module("app.sim.db")
+
+
+def _latest_asof():
+    """daily_signals.json의 최신 거래일(시뮬 시작일 정렬용). 없으면 UTC 오늘."""
+    import datetime as _dt
+    sp = os.path.join(ROOT, "..", "state", "daily_signals.json")
+    try:
+        return json.load(open(sp, encoding="utf-8")).get("asof") or _dt.date.today().isoformat()
+    except Exception:
+        return _dt.date.today().isoformat()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -59,43 +78,87 @@ class Handler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(body)
 
-    def _route_ok(self):
-        return self.path.split("?")[0].rstrip("/") == "/api/userdata"
+    def _path(self):
+        return self.path.split("?")[0].rstrip("/")
 
-    def do_GET(self):
-        if not self._route_ok():
-            return self._send(404, {"error": "not found"})
-        sub = verify(self.headers)
-        if not sub:
-            return self._send(401, {"error": "unauthorized"})
-        p = path_for(sub)
-        try:
-            data = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
-        except Exception:
-            data = {}
-        self._send(200, data)
+    def _auth(self):
+        return verify(self.headers)   # {"sub","email"} 또는 None
 
-    def do_PUT(self):
-        if not self._route_ok():
-            return self._send(404, {"error": "not found"})
-        sub = verify(self.headers)
-        if not sub:
-            return self._send(401, {"error": "unauthorized"})
+    def _body(self):
         n = int(self.headers.get("Content-Length", "0") or 0)
         if n > MAX_BODY:
-            return self._send(413, {"error": "too large"})
+            return None
         raw = self.rfile.read(n) if n else b"{}"
         try:
-            data = json.loads(raw or b"{}")
-            if not isinstance(data, dict):
-                raise ValueError
+            d = json.loads(raw or b"{}")
+            return d if isinstance(d, dict) else None
         except Exception:
-            return self._send(400, {"error": "bad json"})
+            return None
+
+    def do_GET(self):
+        path = self._path()
+        if path == "/api/userdata":
+            info = self._auth()
+            if not info:
+                return self._send(401, {"error": "unauthorized"})
+            p = path_for(info["sub"])
+            try:
+                data = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+            except Exception:
+                data = {}
+            return self._send(200, data)
+        if path == "/api/sim":
+            info = self._auth()
+            if not info:
+                return self._send(401, {"error": "unauthorized"})
+            try:
+                db = _simdb(); db.init()
+                res = db.results(info["sub"]) or {"active": False}
+            except Exception as e:
+                return self._send(500, {"error": str(e)})
+            return self._send(200, res)
+        return self._send(404, {"error": "not found"})
+
+    def do_PUT(self):
+        if self._path() != "/api/userdata":
+            return self._send(404, {"error": "not found"})
+        info = self._auth()
+        if not info:
+            return self._send(401, {"error": "unauthorized"})
+        data = self._body()
+        if data is None:
+            return self._send(400, {"error": "bad json or too large"})
+        sub = info["sub"]
         tmp = path_for(sub) + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False)
         os.replace(tmp, path_for(sub))   # 원자적 교체
         self._send(200, {"ok": True})
+
+    def do_POST(self):
+        path = self._path()
+        if path not in ("/api/sim/start", "/api/sim/reset"):
+            return self._send(404, {"error": "not found"})
+        info = self._auth()
+        if not info:
+            return self._send(401, {"error": "unauthorized"})
+        data = self._body()
+        if data is None:
+            return self._send(400, {"error": "bad json"})
+        db = _simdb(); db.init()
+        sub = info["sub"]
+        try:
+            if path == "/api/sim/reset":
+                cur = db.get_sim(sub)
+                inv = float(data.get("investment") or (cur and cur["investment"]) or 0)
+            else:
+                inv = float(data.get("investment") or 0)
+            if not (10000 <= inv <= 100_000_000_000):     # 1만~1000억 범위
+                return self._send(400, {"error": "investment out of range"})
+            db.start_sim(sub, info.get("email", ""), inv, _latest_asof())
+            return self._send(200, db.results(sub) or {"active": True})
+        except Exception as e:
+            return self._send(500, {"error": str(e)})
 
     def log_message(self, *a):
         pass   # 접근 로그 억제

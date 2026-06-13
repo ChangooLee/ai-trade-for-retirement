@@ -15,9 +15,11 @@ LOG="$ROOT/logs/batch_$(date +%Y%m%d).log"
   "$PY" -m app.batch.update_data
   echo "-- 2) 전 종목 브로드 갱신(공식 API, 분석용)"
   "$PY" -m app.batch.build_broad
-  echo "-- 3) 웹앱 재빌드 → $PUB"
+  echo "-- 3) 웹앱 재빌드 → $PUB (+ state/daily_signals.json 산출)"
   "$PY" -m app.batch.build_webapp --out "$PUB"
   rc=$?
+  echo "-- 4) 활성 시뮬레이션 일별 전진(로그인 사용자별 페이퍼 매매)"
+  "$PY" -m app.batch.run_sims
   echo "==== $(date '+%F %T') 종료 (rc=$rc) ===="
 } >> "$LOG" 2>&1
 # 로그 30일 보관

@@ -117,10 +117,14 @@ details{margin-top:6px}summary{cursor:pointer;color:#9cd6ff;font-size:12.5px}
 <h2>🔴 매도 알림 <span class="sub" style="font-weight:400">(시간청산 40거래일 · TDA 위상 불안정)</span></h2>
 <div class="cards" id="sellCards"></div>
 
-<h2>📒 페이퍼 트레이딩 기록 <span class="sub" style="font-weight:400" id="logSub"></span></h2>
-<div class="dxline"><span class="lab">실적 누적</span>보유 카드의 <b>📒 매도 기록</b>으로 청산하면 여기에 실현손익이 쌓입니다. 실거래 전 <b>1개월+ 페이퍼 실적</b>(승률·손익비)이 검증 단계입니다.</div>
+<h2>📒 매수/매도 기록 <span class="sub" style="font-weight:400">(실거래 손익)</span> <span class="sub" style="font-weight:400" id="logSub"></span></h2>
+<div class="dxline"><span class="lab">실거래 실적</span>위 <b>보유 종목</b>을 <b>📒 매도 기록</b>으로 청산하면 여기에 <b>실현손익</b>이 쌓입니다(실제 트레이딩 기록). 승률·손익비·평균수익으로 본인 매매 성과를 추적하세요.</div>
 <div id="logStats" class="summary-row"></div>
 <div id="logTable"></div>
+
+<h2>🤖 알고리즘 시뮬레이터 <span class="sub" style="font-weight:400">(우리 알고리즘으로 자동 페이퍼 트레이딩)</span></h2>
+<div class="dxline"><span class="lab">자동 페이퍼</span>투자금액을 넣고 <b>시작</b>하면 그날부터 <b>매일 배치</b>가 우리 알고리즘(시총 top400 F리더∩20주선 눌림 · 40거래일/TDA 청산 · D4 노출 · 월 −3% 한도)으로 자동 매매하고 손익을 누적합니다. <b>로그인 사용자만</b> 본인 서버에서 운영됩니다. 리셋하면 그날부터 다시 시작.</div>
+<div id="simSection"></div>
 
 <h2>🧭 종목 발굴</h2>
 <div class="cmp">
@@ -220,12 +224,12 @@ function applyCloudData(d){
   renderHoldInput(); render();   // 재푸시 안 함
 }
 function flagSynced(){ const b=document.getElementById("syncState"); if(b) b.textContent="동기화됨 ✓"; }
-function clearSession(){ idToken=null; gUser=null; try{localStorage.removeItem(LSTOK);}catch(e){} renderAuth(); }
+function clearSession(){ idToken=null; gUser=null; try{localStorage.removeItem(LSTOK);}catch(e){} renderAuth(); if(typeof renderSim==="function") renderSim(); }
 
 async function setSession(token){
   idToken=token; const p=jwtPayload(token); gUser={name:p.name, email:p.email, exp:p.exp};
   try{ localStorage.setItem(LSTOK, token); }catch(e){}
-  renderAuth(); await reconcile();
+  renderAuth(); await reconcile(); renderSim();
 }
 window.onGoogleCredential = async (resp)=>{ await setSession(resp.credential); };
 
@@ -295,6 +299,67 @@ window.addEventListener("beforeunload",()=>{
   }
 });
 window.gLogout = ()=>{ try{ google.accounts.id.disableAutoSelect(); }catch(e){} clearSession(); };
+
+// ---- 알고리즘 시뮬레이터 (로그인 사용자, 백엔드 배치가 매일 운영) ----
+const SIM_API = "/trading/api/sim";
+let simData = null;
+async function simFetch(){
+  if(!idToken){ simData=null; return; }
+  try{ const r=await fetch(SIM_API,{headers:{Authorization:"Bearer "+idToken}}); simData = r.ok ? await r.json() : null; }
+  catch(e){ simData=null; }
+}
+async function renderSim(){
+  const el=document.getElementById("simSection"); if(!el) return;
+  if(!syncEnabled()){ el.innerHTML='<div class="empty">구글 로그인(동기화) 설정 시 사용할 수 있습니다.</div>'; return; }
+  if(!idToken){ el.innerHTML='<div class="note">🔒 <b>로그인</b>하면 알고리즘 시뮬레이터를 시작할 수 있습니다(우측 상단). 시작 후엔 브라우저를 꺼도 <b>매일 서버 배치</b>가 자동으로 페이퍼 매매를 이어갑니다.</div>'; return; }
+  await simFetch();
+  if(!simData || !simData.active){
+    const def = DATA.initial_capital||10000000;
+    el.innerHTML=`<div class="card"><div class="hd"><b>시뮬레이션 시작</b></div>
+      <div class="srow" style="gap:10px;align-items:center"><label>투자금액(원)</label><input id="simInv" type="number" value="${def}" style="width:160px">
+      <button class="btn" style="background:#1b3a6b;border-color:#2a5298" onclick="simStart()">▶ 시작</button>
+      <span class="sub">시작일 종가부터 우리 알고리즘으로 자동 매매를 시작합니다.</span></div></div>`;
+    return;
+  }
+  const d=simData, cls=(d.total_pnl>=0?'pos':'neg'), days=(d.equity_curve||[]).length;
+  el.innerHTML=`<div class="card">
+    <div class="hd"><b>🤖 운영 중</b> <span class="mono">시작 ${d.start_date} · 최근처리 ${d.last_processed||'대기'} · ${days}거래일</span>
+      <button class="btn x" onclick="simReset()">리셋</button></div>
+    <div class="summary-row">
+      <div>투자금<b>${W(d.investment)}</b></div><div>평가자산<b>${W(d.equity)}</b></div>
+      <div>총손익<b class="${cls}">${W(d.total_pnl)} (${P(d.total_ret)})</b></div>
+      <div>실현손익<b class="${d.realized_pnl>=0?'pos':'neg'}">${W(d.realized_pnl)}</b></div>
+      <div>체결<b>${d.n_trades}건 · 승률 ${Math.round((d.win_rate||0)*100)}%</b></div>
+      <div>보유<b>${d.n_positions}종목 · 현금 ${W(d.cash)}</b></div></div>
+    <canvas id="simChart" style="width:100%;height:120px;margin-top:8px"></canvas>
+    ${(d.trades&&d.trades.length)?`<div style="margin-top:8px"><b class="sub">최근 체결</b><table><thead><tr><th>종목</th><th>진입→청산</th><th class="num">손익</th><th class="num">수익률</th><th>사유</th></tr></thead><tbody>`+
+      d.trades.slice(0,12).map(t=>`<tr><td><b>${esc(t.name||t.ticker)}</b></td><td>${t.entry_date}→${t.exit_date}</td><td class="num ${t.pnl>=0?'pos':'neg'}">${W(t.pnl)}</td><td class="num ${t.ret>=0?'pos':'neg'}">${P(t.ret)}</td><td class="sub">${esc(t.reason||'')}</td></tr>`).join("")+
+      `</tbody></table></div>`:'<div class="sub" style="margin-top:6px">아직 청산(매도)된 거래가 없습니다 — 보유 후 청산 시 기록됩니다.</div>'}</div>`;
+  drawSimChart(d.equity_curve||[], d.investment);
+}
+function drawSimChart(curve, inv){
+  const cv=document.getElementById("simChart"); if(!cv||!curve.length) return;
+  const W0=cv.clientWidth||600, H0=120, dpr=window.devicePixelRatio||1;
+  cv.width=W0*dpr; cv.height=H0*dpr; const ctx=cv.getContext("2d"); ctx.scale(dpr,dpr); ctx.clearRect(0,0,W0,H0);
+  const ys=curve.map(p=>p.equity), lo=Math.min(inv,...ys), hi=Math.max(inv,...ys), rg=(hi-lo)||1;
+  const X=i=>curve.length<2?W0/2:i/(curve.length-1)*(W0-8)+4, Y=v=>H0-6-(v-lo)/rg*(H0-12);
+  ctx.strokeStyle="#3a4a63"; ctx.setLineDash([3,3]); ctx.beginPath(); ctx.moveTo(4,Y(inv)); ctx.lineTo(W0-4,Y(inv)); ctx.stroke(); ctx.setLineDash([]);
+  ctx.strokeStyle = ys[ys.length-1]>=inv?"#34d399":"#ef4444"; ctx.lineWidth=1.6; ctx.beginPath();
+  curve.forEach((p,i)=>{ const x=X(i),y=Y(p.equity); i?ctx.lineTo(x,y):ctx.moveTo(x,y); }); ctx.stroke();
+}
+window.simStart=async ()=>{
+  const inv=+(document.getElementById("simInv").value||0);
+  if(!(inv>=10000)){ alert("투자금액을 입력하세요(최소 1만원)."); return; }
+  try{ const r=await fetch(SIM_API+"/start",{method:"POST",headers:{Authorization:"Bearer "+idToken,"Content-Type":"application/json"},body:JSON.stringify({investment:inv})});
+    if(r.status===401){ clearSession(); alert("다시 로그인해주세요."); return; }
+    if(!r.ok){ alert("시작 실패 ("+r.status+")"); return; }
+    simData=await r.json(); renderSim();
+  }catch(e){ alert("시작 실패: "+e); } };
+window.simReset=async ()=>{
+  if(!confirm("시뮬레이션을 리셋하고 오늘부터 다시 시작할까요? (기존 시뮬 기록 삭제)")) return;
+  try{ const r=await fetch(SIM_API+"/reset",{method:"POST",headers:{Authorization:"Bearer "+idToken,"Content-Type":"application/json"},body:JSON.stringify({})});
+    if(r.ok) simData=await r.json(); renderSim();
+  }catch(e){ alert("리셋 실패: "+e); } };
 function renderAuth(){
   const el=document.getElementById("authBar"); if(!el) return;
   const badge=document.getElementById("storeBadge");
@@ -326,7 +391,7 @@ window.addEventListener("load", ()=>{
   if(!syncEnabled()) return;
   let saved=null; try{ saved=localStorage.getItem(LSTOK); }catch(e){}
   if(saved && tokenValid(saved)){ setSession(saved); }        // 새로고침 시 로그인 유지(토큰 만료 전)
-  else { if(saved){ try{localStorage.removeItem(LSTOK);}catch(e){} } renderAuth(); }  // 만료/없음 → 로그인 버튼(자동 One Tap 시도)
+  else { if(saved){ try{localStorage.removeItem(LSTOK);}catch(e){} } renderAuth(); renderSim(); }  // 만료/없음 → 로그인 버튼 + 시뮬 안내
 });
 // ---- 서킷브레이커(월 손실 한도 −3%, 결정 0004 / PIT 검증: 최악월 −14.5%→−6.3%) ----
 const CB_LIMIT = 0.03;
