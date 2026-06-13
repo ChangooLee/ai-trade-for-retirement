@@ -73,7 +73,7 @@ from app.batch.backtest_stats import BACKTEST  # noqa: E402
 from app.dart.filter import annotate_tickers  # noqa: E402
 
 from app.render.sectors import _sector  # noqa: E402
-from app.data.fetchers import load_krx_auth_key  # noqa: E402
+from app.data.fetchers import load_krx_auth_key, _load_env_key  # noqa: E402
 
 TEMPLATE = os.path.join(os.path.dirname(__file__), "..", "render", "templates", "trade_app.html")
 
@@ -276,6 +276,7 @@ def main():
                  "strategy": "F 리더 + 20주선 눌림 + 8주(40거래일) 보유 + D4 변동성 노출",
                  "universe_count": int(len(uni)), "generated": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
                  "universe_short": ("시가총액상위" if cfg['universe'].get('rank_by') == 'mktcap' else "거래대금상위"),
+                 "google_client_id": _load_env_key("GOOGLE_CLIENT_ID"),   # 구글 로그인 동기화(공개값, .env)
                  "universe_rule": ((f"KOSPI+KOSDAQ · 시가총액 상위 {cfg['universe']['top_n']}"
                                     f"(20일 평균 거래대금 ≥ {cfg['universe'].get('min_trdval', 0)/1e8:.0f}억 종목 중)"
                                     if cfg['universe'].get('rank_by') == 'mktcap'

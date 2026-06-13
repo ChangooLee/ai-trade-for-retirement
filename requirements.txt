@@ -8,3 +8,5 @@ pykrx==1.2.8
 ripser>=0.6.15
 persim>=0.3.8
 pytest>=8.0
+# 동기화 API(server/sync_api.py) — 구글 ID 토큰 로컬 검증
+google-auth>=2.0

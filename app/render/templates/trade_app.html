@@ -67,14 +67,17 @@ details{margin-top:6px}summary{cursor:pointer;color:#9cd6ff;font-size:12.5px}
 .dxline{background:#0f1828;border:1px solid var(--line);border-radius:10px;padding:9px 14px;margin:8px 0;font-size:12.5px;color:#cbd5e1}
 .dxline b{color:#e6e9ee}.dxline .lab{color:var(--mut);font-weight:700;margin-right:6px}
 .dx{font-size:11.5px;color:#aeb9c7;margin:2px 0 8px;line-height:1.5}.dx b{color:#e6e9ee}
-</style></head><body><div class="wrap">
+#authBar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:6px 0 2px;font-size:12px;color:var(--mut)}
+#authBar .who{color:#e6e9ee;font-weight:600}#authBar .synced{color:#34d399}#authBar .pill2{background:#13203a;border:1px solid var(--line);border-radius:999px;padding:2px 9px}
+</style><script src="https://accounts.google.com/gsi/client" async defer></script></head><body><div class="wrap">
 
 <h1>📈 LEADERS DESK</h1>
 <div class="tag" id="tagline"></div>
 <div class="badges">
   <span class="badge g">KRX 공식 데이터</span><span class="badge g">No Lookahead</span>
-  <span class="badge b">Paper Trading</span><span class="badge b">로컬 저장(브라우저)</span>
+  <span class="badge b">Paper Trading</span><span class="badge b" id="storeBadge">로컬 저장(브라우저)</span>
 </div>
+<div id="authBar"></div>
 
 <div class="banner" id="banner"></div>
 <div class="dxline" id="regimeNote"></div>
@@ -174,8 +177,80 @@ const W = v => v==null||isNaN(v) ? "—" : "₩"+Math.round(v).toLocaleString();
 const P = (v,d=1) => v==null||isNaN(v) ? "—" : (v>=0?"+":"")+(v*100).toFixed(d)+"%";
 const esc = s => (s+"").replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const principal = () => cashflows.reduce((a,c)=>a+(+c.amount||0),0);   // 현금 투자액(순투입 원금)
-function save(){ localStorage.setItem(LSH, JSON.stringify(holdings));
+function saveLocal(){ localStorage.setItem(LSH, JSON.stringify(holdings));
   localStorage.setItem(LSF, JSON.stringify(cashflows)); localStorage.setItem(LSL, JSON.stringify(tradelog)); }
+function save(){ saveLocal(); pushToCloud(); }
+
+// ---- 구글 로그인 + 기기 간 동기화 (자체 서버 백엔드) ----
+const GCID = (DATA.meta.google_client_id||"").trim();   // OAuth 클라이언트 ID(공개값) — 빌드시 주입
+const SYNC_API = "/trading/api/userdata";
+let idToken=null, gUser=null, pushTimer=null;
+const syncEnabled = () => !!GCID;
+function jwtPayload(t){ try{ return JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); }catch(e){ return {}; } }
+window.onGoogleCredential = async (resp)=>{
+  idToken = resp.credential; const p = jwtPayload(idToken);
+  gUser = {name:p.name, email:p.email, exp:p.exp};
+  await pullFromCloud(); renderAuth();
+};
+async function pullFromCloud(){
+  if(!idToken) return;
+  try{
+    const r = await fetch(SYNC_API, {headers:{Authorization:"Bearer "+idToken}});
+    if(r.status===401){ idToken=null; gUser=null; renderAuth(); return; }
+    if(!r.ok) return;
+    const d = await r.json();
+    if(d && (Array.isArray(d.holdings)||Array.isArray(d.cashflows)||Array.isArray(d.tradelog))){
+      if(Array.isArray(d.holdings)) holdings=d.holdings;
+      if(Array.isArray(d.cashflows)&&d.cashflows.length) cashflows=d.cashflows;
+      if(Array.isArray(d.tradelog)) tradelog=d.tradelog;
+      if(d.eqhist&&typeof d.eqhist==="object") localStorage.setItem(LSE, JSON.stringify(d.eqhist));
+      saveLocal(); renderHoldInput(); render();   // 클라우드 → 화면 반영(재푸시 안 함)
+    }
+  }catch(e){ console.warn("동기화 불러오기 실패", e); }
+}
+function pushToCloud(){
+  if(!idToken) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(async ()=>{
+    let eqhist={}; try{ eqhist=JSON.parse(localStorage.getItem(LSE)||"{}"); }catch(e){}
+    try{
+      const r = await fetch(SYNC_API, {method:"PUT",
+        headers:{Authorization:"Bearer "+idToken, "Content-Type":"application/json"},
+        body: JSON.stringify({holdings, cashflows, tradelog, eqhist})});
+      if(r.status===401){ idToken=null; gUser=null; renderAuth(); }
+      else { const b=document.getElementById("syncState"); if(b) b.textContent="저장됨 ✓"; }
+    }catch(e){ console.warn("동기화 저장 실패", e); }
+  }, 800);
+}
+window.gLogout = ()=>{ try{ google.accounts.id.disableAutoSelect(); }catch(e){} idToken=null; gUser=null; renderAuth(); };
+function renderAuth(){
+  const el=document.getElementById("authBar"); if(!el) return;
+  const badge=document.getElementById("storeBadge");
+  if(!syncEnabled()){ el.innerHTML='<span class="pill2">🔒 로컬 저장 — 구글 동기화 미설정</span>'; return; }
+  if(gUser){
+    if(badge) badge.textContent="구글 동기화";
+    el.innerHTML=`<span class="pill2 synced">✅ 동기화 켜짐</span> <span class="who">${esc(gUser.name||gUser.email||"로그인")}</span> <span id="syncState" class="sub">불러옴</span> <a href="#" onclick="gLogout();return false" style="color:#9aa7b8">로그아웃</a> <span class="sub">기기 간 동일 데이터로 저장됩니다.</span>`;
+  } else {
+    if(badge) badge.textContent="로컬 저장(브라우저)";
+    el.innerHTML='<div id="gbtn"></div> <span class="sub">구글 로그인하면 어느 기기에서나 같은 보유·일지가 보입니다(본인 서버 저장).</span>';
+    setTimeout(initGoogleButton, 50);
+  }
+}
+let _gtries=0;
+function initGoogleButton(){
+  if(!syncEnabled()) return;
+  if(!window.google || !google.accounts){      // GIS 스크립트 비동기 로드 → 준비될 때까지 재시도
+    if(_gtries++ < 40) setTimeout(initGoogleButton, 150);
+    return;
+  }
+  try{
+    google.accounts.id.initialize({client_id:GCID, callback:onGoogleCredential, auto_select:true});
+    const b=document.getElementById("gbtn");
+    if(b && !b.childElementCount){ google.accounts.id.renderButton(b,{theme:"filled_blue",size:"medium",text:"signin_with",shape:"pill"}); }
+    google.accounts.id.prompt();   // One Tap
+  }catch(e){ console.warn("구글 초기화 실패", e); }
+}
+window.addEventListener("load", ()=>{ if(syncEnabled()) renderAuth(); });
 // ---- 서킷브레이커(월 손실 한도 −3%, 결정 0004 / PIT 검증: 최악월 −14.5%→−6.3%) ----
 const CB_LIMIT = 0.03;
 function eqHist(){ try{ return JSON.parse(localStorage.getItem(LSE)||"{}"); }catch(e){ return {}; } }
@@ -632,6 +707,6 @@ document.getElementById("capital").value=initialCf().amount;
 document.getElementById("capital").addEventListener("change",e=>{initialCf().amount=+e.target.value||0;save();render();});
 document.getElementById("cfDate").value=DATA.meta.asof;
 document.getElementById("bdate").value=DATA.meta.asof;
-document.getElementById("foot").innerHTML=`데이터: KRX 공식 API 종가(EOD), 매 거래일 갱신. 신호는 기준일 종가로 계산하고 집행은 다음 거래일 시가를 가정합니다. 보유·자본은 이 브라우저에만 저장됩니다.<br>검증: 전략 성과는 상장폐지 포함 PIT 패널로 검증(생존편향 제거, 위 카드). 단 라이브 후보는 현재 상장 종목에서 선정되고, 레짐 의존(2018·2019·2022·2024 음)이며 MDD가 깊어 서킷브레이커로 한도 관리합니다. 개별 종목의 수익은 보장하지 않습니다. 생성 ${DATA.meta.generated}`;
+document.getElementById("foot").innerHTML=`데이터: KRX 공식 API 종가(EOD), 매 거래일 갱신. 신호는 기준일 종가로 계산하고 집행은 다음 거래일 시가를 가정합니다. 보유·자본·매매일지는 이 브라우저에 저장되며, 구글 로그인 시 본인 서버에 동기화되어 기기 간 동일하게 보입니다.<br>검증: 전략 성과는 상장폐지 포함 PIT 패널로 검증(생존편향 제거, 위 카드). 단 라이브 후보는 현재 상장 종목에서 선정되고, 레짐 의존(2018·2019·2022·2024 음)이며 MDD가 깊어 서킷브레이커로 한도 관리합니다. 개별 종목의 수익은 보장하지 않습니다. 생성 ${DATA.meta.generated}`;
 renderHoldInput();render();
 </script></body></html>
