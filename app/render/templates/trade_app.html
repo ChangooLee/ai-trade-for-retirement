@@ -215,7 +215,9 @@ function applyCloudData(d){
   if(Array.isArray(d.cashflows)&&d.cashflows.length) cashflows=d.cashflows;
   if(Array.isArray(d.tradelog)) tradelog=d.tradelog;
   if(d.eqhist&&typeof d.eqhist==="object") localStorage.setItem(LSE, JSON.stringify(d.eqhist));
-  saveLocal(); renderHoldInput(); render();   // 재푸시 안 함
+  saveLocal();
+  const cf=document.getElementById("capital"); if(cf) cf.value=initialCf().amount;   // 동기화된 현금 투자액 입력란 갱신
+  renderHoldInput(); render();   // 재푸시 안 함
 }
 function flagSynced(){ const b=document.getElementById("syncState"); if(b) b.textContent="동기화됨 ✓"; }
 function clearSession(){ idToken=null; gUser=null; try{localStorage.removeItem(LSTOK);}catch(e){} renderAuth(); }
@@ -329,18 +331,23 @@ window.addEventListener("load", ()=>{
 // ---- 서킷브레이커(월 손실 한도 −3%, 결정 0004 / PIT 검증: 최악월 −14.5%→−6.3%) ----
 const CB_LIMIT = 0.03;
 function eqHist(){ try{ return JSON.parse(localStorage.getItem(LSE)||"{}"); }catch(e){ return {}; } }
-function cbStatus(total){   // 월초 자산 대비 당월 손익(MTD) — 현금흐름(추가입금·출금)은 손익에서 제외
+function cbStatus(total){   // 당월 손익을 '현금 투자액(원금)' 대비로 측정. 손익=총자산−원금이라 기여금(원금입력·입출금)은 자동 상쇄.
   const key=(DATA.meta.asof||"").slice(0,7);
-  if(!key || !(total>0)) return {key, base:null, mtd:null, tripped:false, active:false};
+  const prin=principal();
+  if(!key || !(prin>0)) return {key, prin, mtd:null, tripped:false, active:false};
+  const curPnl = total - prin;                 // 누적 손익(기여금 제외 — 원금이 바뀌어도 오염 안 됨)
   const h=eqHist();
-  if(h[key]==null) h[key] = (h._last!=null ? h._last : total);  // 새 달 → 전월 마지막 자산을 월초 기준으로 승계
-  h._last=total; localStorage.setItem(LSE, JSON.stringify(h));
-  const base=h[key];
-  // 당월 '초기투입 외' 현금흐름 합 → 손익 오염 방지(입금이 수익처럼, 출금이 손실처럼 보이지 않게)
-  const flowMonth = cashflows.filter(c=>!c.initial && (c.date||"").slice(0,7)===key)
-                             .reduce((a,c)=>a+(+c.amount||0),0);
-  const adj = total - flowMonth, mtd = base>0 ? adj/base - 1 : 0;
-  return {key, base, mtd, mtdWon: adj-base, limitWon: base*CB_LIMIT, flowMonth,
+  let base=h[key];
+  const valid = base && typeof base==="object" && typeof base.pnl==="number";
+  if(!valid){                                   // 새 달 / 구버전(숫자=오염) → 전월말 손익 또는 현재로 재기준(자가복구)
+    const lastValid = h._last && typeof h._last==="object" && typeof h._last.pnl==="number";
+    base = {pnl: lastValid ? h._last.pnl : curPnl};
+    h[key]=base;
+  }
+  h._last={pnl:curPnl}; localStorage.setItem(LSE, JSON.stringify(h));
+  const mtdWon = curPnl - base.pnl;             // 당월 손익(₩)
+  const mtd = prin>0 ? mtdWon/prin : 0;         // 원금 대비 비율
+  return {key, prin, mtd, mtdWon, limitWon: prin*CB_LIMIT, basePnl: base.pnl,
           tripped: mtd <= -CB_LIMIT, active:true};
 }
 const ALL = DATA.all_stocks || {};   // 코드 -> [이름, 종가, 시장] (전 상장종목)
@@ -518,12 +525,12 @@ function render(){
   const pf=compute();
   // 서킷브레이커 (월 손실 한도 −3%)
   const cb=cbStatus(pf.total); window.CB_TRIP=cb.tripped;
-  const cbBasis = `<span class="sub">기준: 현금 투자액(원금) ${W(pf.prin)} · 월초 자산 ${W(cb.base)} · 한도 −${(CB_LIMIT*100).toFixed(0)}%=${W(cb.limitWon)}${cb.flowMonth?` · 당월 입출금 ${W(cb.flowMonth)} 제외`:''}</span>`;
+  const cbBasis = `<span class="sub">기준: 현금 투자액(원금) ${W(cb.prin)} 대비 당월 손익 · 한도 −${(CB_LIMIT*100).toFixed(0)}%=${W(cb.limitWon)} · 원금 입력·입출금은 손익에서 제외</span>`;
   document.getElementById("cbBanner").innerHTML = !cb.active
-    ? `<div class="note">🛡 <b>서킷브레이커</b> 대기 — 현금 투자액(원금)과 보유를 입력하면 <b>투입 원금 기준</b> 월초 자산 대비 당월 손익을 추적해 <b>−${(CB_LIMIT*100).toFixed(0)}%</b> 도달 시 당월 신규 매수를 중단합니다(결정 0004·PIT 검증).</div>`
+    ? `<div class="note">🛡 <b>서킷브레이커</b> 대기 — 현금 투자액(원금)을 입력하면 <b>원금 대비 당월 손익</b>을 추적해 <b>−${(CB_LIMIT*100).toFixed(0)}%</b> 도달 시 당월 신규 매수를 중단합니다(결정 0004·PIT 검증).</div>`
     : cb.tripped
-      ? `<div class="warn" style="border-left-color:#ef4444;background:#2a1416"><b class="neg">🛑 월 손실 한도 도달</b> — 당월 손익 <b class="neg">${P(cb.mtd)} (${W(cb.mtdWon)})</b>. <b>당월 신규 매수 중단</b>(보유분은 시간청산·TDA 규칙 유지). ${cb.key} 종료 후 자동 해제.<br>${cbBasis}</div>`
-      : `<div class="note" style="border-left-color:#34d399">🛡 <b>서킷브레이커 정상</b> — 당월 손익 <b class="${cb.mtd>=0?'pos':'neg'}">${P(cb.mtd)} (${W(cb.mtdWon)})</b>. 한도 −${(CB_LIMIT*100).toFixed(0)}%까지 여유 <b>${P(cb.mtd+CB_LIMIT)}</b>.<br>${cbBasis}</div>`;
+      ? `<div class="warn" style="border-left-color:#ef4444;background:#2a1416"><b class="neg">🛑 월 손실 한도 도달</b> — 당월 손익 <b class="neg">${P(cb.mtd)} (${W(cb.mtdWon)})</b> (원금 ${W(cb.prin)} 대비). <b>당월 신규 매수 중단</b>(보유분은 시간청산·TDA 규칙 유지). ${cb.key} 종료 후 자동 해제.<br>${cbBasis}</div>`
+      : `<div class="note" style="border-left-color:#34d399">🛡 <b>서킷브레이커 정상</b> — 당월 손익 <b class="${cb.mtd>=0?'pos':'neg'}">${P(cb.mtd)} (${W(cb.mtdWon)})</b> (원금 ${W(cb.prin)} 대비). 한도 −${(CB_LIMIT*100).toFixed(0)}%까지 여유 <b>${P(cb.mtd+CB_LIMIT)}</b>.<br>${cbBasis}</div>`;
   // 배너
   const slots=Math.min(DATA.sizing.max_positions,Math.ceil(m/DATA.sizing.base_slot_weight)), pw=slots?m/slots:0;
   document.getElementById("banner").innerHTML=`<div class="mode ${mc}">${e.mode}</div>
