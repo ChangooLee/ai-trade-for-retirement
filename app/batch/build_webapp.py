@@ -325,13 +325,7 @@ def main():
             "exposure": {"target": m, "slots": int(slots), "weight": weight, "mode": exp["mode"]},
             "buy_order": [{"ticker": tk, "name": stocks[tk]["name"], "close": float(stocks[tk]["close"])}
                           for tk in buy_order if tk in stocks and stocks[tk].get("close")],
-            "sell_tickers": sorted(set(legacy_sell)),     # 추세이탈(20주선) 전량청산 — TDA는 아래 graduated로 분리
-            "tda": {row["ticker"]: {"risk_pct": round(float(row["risk_pct"]), 3),
-                                    "trend": None if pd.isna(row["trend"]) else round(float(row["trend"]), 4)}
-                    for _, row in tda_df.iterrows()} if len(tda_df) else {},
-            "tda_exit": {"trim_pct": float(tcfg.get("exit_trim_pct", 0.75)),
-                         "full_pct": float(tcfg.get("exit_full_pct", 0.85)),
-                         "trim_frac": float(tcfg.get("exit_trim_frac", 0.5))},
+            "sell_tickers": sorted(set(legacy_sell)),     # 청산 = 시간40일 + 20주선 이탈만(TDA 청산 미사용 — 자문 전용)
             "prices": prices, "calendar": cal,
         }
         _repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
