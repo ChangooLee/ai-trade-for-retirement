@@ -1,0 +1,19 @@
+[Unit]
+# LEADERS DESK 동기화 API — 구글 로그인 기기 간 동기화 (server/sync_api.py)
+# 설치(서버): sudo cp server/leaders-sync.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now leaders-sync
+# GOOGLE_CLIENT_ID는 공개값(브라우저 노출). 변경 시 이 파일 + .env(빌드용) 동기화.
+Description=LEADERS DESK sync API (Google login cross-device sync)
+After=network.target
+
+[Service]
+Type=simple
+User=lchangoo
+WorkingDirectory=/home/lchangoo/ai-trade-for-retirement
+Environment=GOOGLE_CLIENT_ID=396764865690-ch53bvtvhrr3bajabf996f8p1blu6d72.apps.googleusercontent.com
+Environment=SYNC_PORT=8799
+ExecStart=/home/lchangoo/ai-trade-for-retirement/.venv/bin/python /home/lchangoo/ai-trade-for-retirement/server/sync_api.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
