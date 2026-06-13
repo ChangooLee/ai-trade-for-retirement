@@ -3,7 +3,7 @@
 <title>LEADERS DESK — 주도주 눌림 데일리 트레이딩</title>
 <style>
 /* LEADERS DESK — 다크 모노크롬. 블랙 메인 + 화이트 포인트. 강조는 절제된 모던 톤(적/청/앰버/에메랄드). Apple SD Gothic Neo. */
-:root{--bg:#0b0b0d;--card:#161719;--panel:#1c1d21;--line:#2a2c31;--line2:#3a3d44;--ink:#f6f7f8;--ink2:#c9ccd2;--mut:#8b8f97;--accent:#f6f7f8;--up:#f0584c;--down:#5b94f0}
+:root{--bg:#0b0b0d;--card:#161719;--panel:#1c1d21;--line:#2a2c31;--line2:#3a3d44;--ink:#f6f7f8;--ink2:#c9ccd2;--mut:#8b8f97;--accent:#f6f7f8;--up:#f0584c;--down:#5b94f0;--buy:#2ec27e}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);
   font:14px/1.55 "Apple SD Gothic Neo","AppleGothic",-apple-system,BlinkMacSystemFont,"Pretendard","Malgun Gothic",system-ui,sans-serif;
@@ -27,12 +27,12 @@ h2{font-size:15px;margin:22px 0 9px;font-weight:700;letter-spacing:-.2px;color:v
 .warn{background:#211d10;border:1px solid #4a4020;border-left:3px solid #e0a93b;border-radius:8px;padding:9px 13px;font-size:12.5px;margin:8px 0;color:#e7d8ad}
 .cards{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;box-shadow:0 1px 2px rgba(10,11,13,.03)}
-.card.buy{border-left:3px solid var(--ink)}.card.hold{border-left:3px solid var(--line2)}.card.sell{border-left:3px solid var(--up)}.card.imminent{border-left:3px solid #caa53a}
+.card.buy{border-left:3px solid var(--buy)}.card.hold{border-left:3px solid var(--line2)}.card.sell{border-left:3px solid var(--up)}.card.imminent{border-left:3px solid #e0a93b}
 .hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}.hd b{font-size:14.5px;font-weight:700}
 .mono{font-family:ui-monospace,"SF Mono",Menlo,monospace;color:var(--mut);font-size:11px}
 .pill{margin-left:auto;padding:3px 10px;border-radius:6px;font-size:11px;font-weight:600;border:1px solid var(--line2);color:var(--ink2)}
-.pill.buy{color:var(--ink);border-color:var(--ink)}.pill.hold{color:var(--mut)}.pill.sell{color:var(--up);border-color:var(--up)}.pill.imm{color:#a9842a;border-color:#d8c074}
-.chips{margin:4px 0 8px}.chip{display:inline-block;padding:2px 8px;margin:2px 2px 0 0;border-radius:5px;font-size:10.5px;background:var(--panel);color:var(--ink2);border:1px solid var(--line)}
+.pill.buy{color:var(--buy);border-color:var(--buy)}.pill.hold{color:var(--mut)}.pill.sell{color:var(--up);border-color:var(--up)}.pill.imm{color:#e0a93b;border-color:#6a5a2c}
+.chips{margin:4px 0 8px}.chip{display:inline-block;padding:2px 8px;margin:2px 2px 0 0;border-radius:5px;font-size:10.5px;background:rgba(46,194,126,.12);color:var(--buy);border:1px solid rgba(46,194,126,.32)}
 .meta{color:var(--mut);font-size:12px;margin:4px 0}
 canvas{width:100%;height:150px;display:block;background:var(--panel);border:1px solid var(--line);border-radius:8px;margin:6px 0}
 .cl{font-size:10.5px;color:var(--mut);margin:2px 0}.cl b{margin:0 2px}
@@ -77,9 +77,9 @@ details{margin-top:6px}summary{cursor:pointer;color:var(--ink2);font-size:12.5px
 .cmp-hd{font-size:13.5px;font-weight:700;padding:8px 12px;border-radius:8px;margin-bottom:4px;background:var(--panel);color:var(--ink);border:1px solid var(--line)}
 .cmp-hd.legacy,.cmp-hd.tda{background:var(--panel);color:var(--ink)}
 .cmp-sub{font-size:12px;font-weight:700;margin:14px 0 6px;padding-bottom:5px;border-bottom:1px solid var(--line);color:var(--ink2)}
-.cmp-sub.buy{color:var(--ink)}.cmp-sub.sell{color:var(--up)}
+.cmp-sub.buy{color:var(--buy)}.cmp-sub.sell{color:var(--up)}
 .scard{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:7px 0}
-.scard.b{border-left:3px solid var(--ink)}.scard.s{border-left:3px solid var(--up)}
+.scard.b{border-left:3px solid var(--buy)}.scard.s{border-left:3px solid var(--up)}
 .scard .nm{font-weight:700;font-size:13px;color:var(--ink)}.scard .sub{margin-left:5px}
 .srow{display:flex;flex-wrap:wrap;gap:3px 14px;margin-top:5px;font-size:11.5px;color:var(--mut);font-variant-numeric:tabular-nums}
 .srow b{color:var(--ink);font-weight:700}
@@ -948,9 +948,14 @@ document.getElementById("addBtn").addEventListener("click",addHolding);
 // 탭 전환
 document.querySelectorAll("#tabs .tab").forEach(t=>t.addEventListener("click",()=>{
   document.querySelectorAll("#tabs .tab").forEach(x=>x.classList.toggle("active",x===t));
-  const p="panel-"+t.dataset.panel;
-  document.querySelectorAll(".panel").forEach(pn=>pn.classList.toggle("active",pn.id===p));
+  const p=t.dataset.panel;
+  document.querySelectorAll(".panel").forEach(pn=>pn.classList.toggle("active",pn.id==="panel-"+p));
   try{ window.scrollTo(0,0); }catch(e){}
+  // 탭이 보이게 된 뒤 차트 재그리기(숨은 패널은 clientWidth 0이라 안 그려짐)
+  setTimeout(()=>{
+    try{ paintCharts(); }catch(e){}
+    if(p==="sim" && simData && simData.active) try{ drawSimChart(simData.equity_curve||[], simData.investment, "simChart"); }catch(e){}
+  }, 40);
 }));
 // ---- 매수가 호가단위(틱) 조정: 버튼·키보드·휠·모바일 드래그 ----
 function tickSize(p){ p=+p||0;
