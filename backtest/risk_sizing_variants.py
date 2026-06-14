@@ -27,10 +27,11 @@ from app.indicators.leader import compute_leader_flags  # noqa: E402
 from app.indicators.pullback import compute_pullback_flags  # noqa: E402
 from app.portfolio.sizing import compute_target_slots, compute_weight_per_stock  # noqa: E402
 from backtest.pit_mktcap_backtest import load_adjusted  # noqa: E402
+from app.indicators.tda import compute_tda_signals, tda_buy_sell  # noqa: E402
 
 
-def precompute(top, step, frm):
-    """리밸런스별 시그널 1회 계산: buy[(tk,rs_rank)] · sells(20주선 이탈) · m(D4 목표노출). 가격행렬도 반환."""
+def precompute(top, step, frm, with_tda=False):
+    """리밸런스별 시그널 1회 계산: buy[(tk,rs_rank)] · sells(20주선 이탈) · m(D4) [· buy_tda(TDA 발굴)]. 가격행렬도 반환."""
     cfg = yaml.safe_load(open("config/strategy.yaml", encoding="utf-8"))
     mc, ml = cfg["universe"]["min_close"], cfg["universe"]["min_listing_days"]
     liq = cfg["universe"].get("min_trdval", 5e8)
@@ -44,9 +45,11 @@ def precompute(top, step, frm):
     opn = daily.pivot_table(index="date", columns="ticker", values="open").reindex(cal).where(lambda x: x > 0)
     cls = daily.pivot_table(index="date", columns="ticker", values="close").reindex(cal).where(lambda x: x > 0)
     low = daily.pivot_table(index="date", columns="ticker", values="low").reindex(cal).where(lambda x: x > 0)
+    high = daily.pivot_table(index="date", columns="ticker", values="high").reindex(cal).where(lambda x: x > 0)
     low_roll20 = low.rolling(20, min_periods=5).min()           # 스윙로우(20일 저점) — 트레일링 손절용
+    high52 = high.rolling(252, min_periods=120).max()           # 52주 전고점 — 목표가(익절) 기준
     by_date = {d: g for d, g in di.groupby("date")}
-    print(f"지표 계산 {time.time()-t0:.0f}s · {len(cal)}거래일", file=sys.stderr)
+    print(f"지표 계산 {time.time()-t0:.0f}s · {len(cal)}거래일 · with_tda={with_tda}", file=sys.stderr)
 
     frm = pd.Timestamp(frm)
     rebal = [i for i in range(0, n - step - 1, step) if cal[i] >= frm]
@@ -71,10 +74,18 @@ def precompute(top, step, frm):
         mg["bw"] = mg["close"] / mg["w_ma20"] - 1
         sells = set(mg[(mg["bw"] < 0) & (mg["mom_6m_1m"] < 0)]["ticker"])
         sig[i] = {"buy": buy, "sells": sells, "m": float(m), "slots_in": maxpos, "base": baseslot}
+        if with_tda:                                            # TDA 발굴 후보(위상 안정+추세, score 상위) — 무거움
+            sub = di[(di["date"] <= t) & (di["ticker"].isin(uni["ticker"]))]
+            try:
+                tdf = compute_tda_signals(sub, t, cfg)
+                tbuy, _ = tda_buy_sell(tdf, n_buy=maxpos, n_sell=8)
+            except Exception:
+                tbuy = []
+            sig[i]["buy_tda"] = [(tk, 0.0) for tk in tbuy]
         if (c + 1) % 100 == 0:
             print(f"  precompute {c+1}/{len(rebal)} ({t.date()}) {time.time()-t0:.0f}s", file=sys.stderr)
-    meta = {"cal": cal, "n": n, "rebal": rebal, "opn": opn, "cls": cls, "low": low,
-            "low_roll20": low_roll20, "maxpos": maxpos, "baseslot": baseslot,
+    meta = {"cal": cal, "n": n, "rebal": rebal, "opn": opn, "cls": cls, "low": low, "high": high,
+            "low_roll20": low_roll20, "high52": high52, "maxpos": maxpos, "baseslot": baseslot,
             "cost": cfg["cost"]["assumed_round_trip_cost"], "cap0": cfg["portfolio"]["initial_capital"], "H": cfg["holding"]["max_holding_days"]}
     return sig, meta
 
@@ -89,10 +100,12 @@ def run_variant(name, cfg_v, sig, meta, i0=None, i1=None):
     """한 변형 시뮬. i0/i1(cal 인덱스)로 기간 제한(워크포워드용) — 그 구간만 신규자본으로 시뮬."""
     cal, n, rebal = meta["cal"], meta["n"], meta["rebal"]
     opn, cls, low, low_roll20 = meta["opn"], meta["cls"], meta["low"], meta["low_roll20"]
+    high, high52 = meta.get("high"), meta.get("high52")
     H, cost, cap0 = meta["H"], meta["cost"], meta["cap0"]
     maxpos, baseslot = meta["maxpos"], meta["baseslot"]
     trend = cfg_v.get("trend", True); breaker = cfg_v.get("breaker", "block"); cb = cfg_v.get("cb", 0.03)
     stop = cfg_v.get("stop"); sizing = cfg_v.get("sizing", "equal")
+    entry = cfg_v.get("entry", "momentum"); target = cfg_v.get("target", False)  # entry: momentum|tda · target: 52주고점 익절
 
     cash = float(cap0); pos = {}; trades = []; writeoffs = 0
     eq_daily = np.full(n, np.nan); cb_month = None; cb_base = 0.0
@@ -136,6 +149,17 @@ def run_variant(name, cfg_v, sig, meta, i0=None, i1=None):
                     op = _val(opn, i, tk)
                     fill = op if (op is not None and op <= stp) else stp   # 갭다운이면 시가 체결
                     close_pos(tk, fill, i, "손절")
+        # --- 일 단위 목표가 익절(M1) — 52주 전고점 도달 시 ---
+        if target and high is not None:
+            for tk in list(pos.keys()):
+                p = pos[tk]
+                if i <= p["eidx"] or not p.get("t52"):
+                    continue
+                hi = _val(high, i, tk)
+                if hi is not None and hi >= p["t52"]:
+                    op = _val(opn, i, tk)
+                    fill = op if (op is not None and op >= p["t52"]) else p["t52"]   # 갭상승이면 시가, 아니면 목표가 체결
+                    close_pos(tk, fill, i, "목표가익절")
         # --- 리밸런스: 시간/추세 청산 → 브레이커 → 진입 ---
         if i in rebal_set:
             # 청산: 시간 40거래일 OR 추세이탈(20주선)
@@ -166,7 +190,8 @@ def run_variant(name, cfg_v, sig, meta, i0=None, i1=None):
             block = tripped and breaker in ("block", "liq")
             m = sig[i]["m"]; slots = compute_target_slots(m, maxpos, baseslot)
             base_w = compute_weight_per_stock(m, slots)
-            buy = [b for b in sig[i]["buy"] if b[0] not in pos]
+            buy_src = sig[i].get("buy_tda", []) if entry == "tda" else sig[i]["buy"]   # TDA 발굴 vs 모멘텀
+            buy = [b for b in buy_src if b[0] not in pos]
             if not block and slots > len(pos) and buy and base_w > 0:
                 eq_now = equity_at(i); need = slots - len(pos)
                 # 컨빅션 배수: 의도한 상위 need개 후보의 RS로 [0.5,1.7]배·합 보존(나머지는 1.0)
@@ -190,6 +215,8 @@ def run_variant(name, cfg_v, sig, meta, i0=None, i1=None):
                         p = {"eidx": ni, "epx": bp, "sh": sh}
                         if stop:
                             p["stop"] = bp * (1 - stop[1]) if stop[0] == "pct" else (_val(low_roll20, i, tk) or bp * 0.85)
+                        if target and high52 is not None:
+                            p["t52"] = _val(high52, i, tk)        # 진입 시점의 52주 전고점 = 익절 목표(고정)
                         pos[tk] = p
         eq_daily[i] = equity_at(i)
 

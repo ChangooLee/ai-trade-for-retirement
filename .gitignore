@@ -7,3 +7,6 @@ state/
 *.parquet
 .DS_Store
 .pytest_cache/
+.venv-qlib/
+backtest/qlib_tools/dump_bin.py
+mlruns/
