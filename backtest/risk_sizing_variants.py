@@ -30,8 +30,8 @@ from backtest.pit_mktcap_backtest import load_adjusted  # noqa: E402
 from app.indicators.tda import compute_tda_signals, tda_buy_sell  # noqa: E402
 
 
-def precompute(top, step, frm, with_tda=False):
-    """리밸런스별 시그널 1회 계산: buy[(tk,rs_rank)] · sells(20주선 이탈) · m(D4) [· buy_tda(TDA 발굴)]. 가격행렬도 반환."""
+def precompute(top, step, frm, with_tda=False, ml_pred_path=None):
+    """리밸런스별 시그널 1회 계산: buy[(tk,rs_rank)] · sells(20주선 이탈) · m(D4) [· buy_tda · ml_buy]. 가격행렬도 반환."""
     cfg = yaml.safe_load(open("config/strategy.yaml", encoding="utf-8"))
     mc, ml = cfg["universe"]["min_close"], cfg["universe"]["min_listing_days"]
     liq = cfg["universe"].get("min_trdval", 5e8)
@@ -49,7 +49,12 @@ def precompute(top, step, frm, with_tda=False):
     low_roll20 = low.rolling(20, min_periods=5).min()           # 스윙로우(20일 저점) — 트레일링 손절용
     high52 = high.rolling(252, min_periods=120).max()           # 52주 전고점 — 목표가(익절) 기준
     by_date = {d: g for d, g in di.groupby("date")}
-    print(f"지표 계산 {time.time()-t0:.0f}s · {len(cal)}거래일 · with_tda={with_tda}", file=sys.stderr)
+    ml_by_date = None
+    if ml_pred_path:                                          # qlib 등 ML 예측점수(date,ticker,score) → 진입 신호용
+        mlp = pd.read_parquet(ml_pred_path)
+        mlp["date"] = pd.to_datetime(mlp["date"]); mlp["ticker"] = mlp["ticker"].astype(str)
+        ml_by_date = {d: g.set_index("ticker")["score"] for d, g in mlp.groupby("date")}
+    print(f"지표 계산 {time.time()-t0:.0f}s · {len(cal)}거래일 · with_tda={with_tda} · ml={'Y' if ml_by_date else 'N'}", file=sys.stderr)
 
     frm = pd.Timestamp(frm)
     rebal = [i for i in range(0, n - step - 1, step) if cal[i] >= frm]
@@ -82,6 +87,13 @@ def precompute(top, step, frm, with_tda=False):
             except Exception:
                 tbuy = []
             sig[i]["buy_tda"] = [(tk, 0.0) for tk in tbuy]
+        if ml_by_date is not None:                            # ML 점수 상위 = 진입 후보(우리 유니버스 내)
+            s = ml_by_date.get(t)
+            if s is not None:
+                sc = s.reindex(uni["ticker"].astype(str)).dropna().sort_values(ascending=False)
+                sig[i]["ml_buy"] = [(tk, float(v)) for tk, v in sc.items()]
+            else:
+                sig[i]["ml_buy"] = []
         if (c + 1) % 100 == 0:
             print(f"  precompute {c+1}/{len(rebal)} ({t.date()}) {time.time()-t0:.0f}s", file=sys.stderr)
     meta = {"cal": cal, "n": n, "rebal": rebal, "opn": opn, "cls": cls, "low": low, "high": high,
@@ -190,7 +202,9 @@ def run_variant(name, cfg_v, sig, meta, i0=None, i1=None):
             block = tripped and breaker in ("block", "liq")
             m = sig[i]["m"]; slots = compute_target_slots(m, maxpos, baseslot)
             base_w = compute_weight_per_stock(m, slots)
-            buy_src = sig[i].get("buy_tda", []) if entry == "tda" else sig[i]["buy"]   # TDA 발굴 vs 모멘텀
+            buy_src = (sig[i].get("buy_tda", []) if entry == "tda"
+                       else sig[i].get("ml_buy", []) if entry == "ml"   # qlib ML 점수 상위
+                       else sig[i]["buy"])
             buy = [b for b in buy_src if b[0] not in pos]
             if not block and slots > len(pos) and buy and base_w > 0:
                 eq_now = equity_at(i); need = slots - len(pos)
