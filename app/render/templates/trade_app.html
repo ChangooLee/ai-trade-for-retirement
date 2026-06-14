@@ -195,9 +195,14 @@ details{margin-top:6px}summary{cursor:pointer;color:var(--ink2);font-size:12.5px
   <div><label>시작일</label><input id="btStart" type="date" value="2026-01-01" style="width:150px"></div>
   <div><label>종료일</label><input id="btEnd" type="date" value="2026-12-31" style="width:150px"></div>
   <div><label>투자금액(원)</label><input id="btCap" type="number" value="10000000" style="width:140px"></div>
+  <div><label>전략</label><select id="btStrategy" onchange="btToggleStrategy()"><option value="swing">스윙(현행)</option><option value="overnight">단타(오버나이트)</option></select></div>
+  <span id="swingParams" style="display:contents">
   <div><label>노출(공격성)</label><select id="btMult"><option value="1.0">기본 ×1.0</option><option value="1.5">적극 ×1.5</option><option value="2.0">공격 ×2.0</option><option value="2.5">최대 ×2.5</option></select></div>
   <div><label>월 손실한도</label><select id="btCb"><option value="0.03">−3%</option><option value="0.05">−5%</option><option value="0.08">−8%</option><option value="0">끔</option></select></div>
-  <div><label>한도 도달 시</label><select id="btMode"><option value="block">신규매수 중단</option><option value="liq">전량청산</option></select></div>
+  <div><label>한도 도달 시</label><select id="btMode"><option value="block">신규매수 중단</option><option value="liq">전량청산</option></select></div></span>
+  <span id="onParams" style="display:none">
+  <div><label>단타 노출</label><select id="btOnExp"><option value="0.3">30% (권장)</option><option value="0.5">50%</option><option value="1.0">100%</option></select></div>
+  <div><label>Risk-Off 밤</label><select id="btGate"><option value="off">매매(권장)</option><option value="on">쉬기</option></select></div></span>
   <button class="btn" onclick="runBacktest()">백테스트 실행</button>
 </div>
 <div id="btResult"></div>
@@ -451,31 +456,48 @@ function drawSimChart(curve, inv, cid){
   ctx.strokeStyle = ys[ys.length-1]>=inv?"#34c77b":"#f0584c"; ctx.lineWidth=1.6; ctx.beginPath();
   curve.forEach((p,i)=>{ const x=X(i),y=Y(p.equity); i?ctx.lineTo(x,y):ctx.moveTo(x,y); }); ctx.stroke();
 }
+function btToggleStrategy(){   // 전략에 따라 파라미터 묶음 토글(스윙 노출/한도 vs 단타 노출/게이트)
+  const ov=document.getElementById("btStrategy").value==="overnight";
+  document.getElementById("swingParams").style.display = ov?"none":"contents";
+  document.getElementById("onParams").style.display = ov?"contents":"none";
+}
 window.runBacktest=async ()=>{
   const el=document.getElementById("btResult");
   const start=document.getElementById("btStart").value, end=document.getElementById("btEnd").value;
   const cap=+document.getElementById("btCap").value||10000000;
-  const mult=document.getElementById("btMult").value, cb=document.getElementById("btCb").value;
-  const mode=document.getElementById("btMode").value;
+  const strat=document.getElementById("btStrategy").value;
   if(!start||!end||start>=end){ alert("시작일이 종료일보다 빨라야 합니다."); return; }
   el.innerHTML='<div class="note">백테스트 실행 중… (몇 초 소요)</div>';
+  let q;
+  if(strat==="overnight"){
+    const exp=document.getElementById("btOnExp").value, gate=document.getElementById("btGate").value;
+    q=`?strategy=overnight&start=${start}&end=${end}&capital=${cap}&exposure=${exp}&gate=${gate}`;
+  } else {
+    const mult=document.getElementById("btMult").value, cb=document.getElementById("btCb").value, mode=document.getElementById("btMode").value;
+    q=`?start=${start}&end=${end}&capital=${cap}&exposure_mult=${mult}&cb_limit=${cb}&cb_mode=${mode}`;
+  }
   try{
-    const q=`?start=${start}&end=${end}&capital=${cap}&exposure_mult=${mult}&cb_limit=${cb}&cb_mode=${mode}`;
     const r=await fetch("/trading/api/backtest"+q);
     const d=await r.json();
     if(!r.ok||d.error){ el.innerHTML=`<div class="warn">백테스트 실패: ${esc(d.error||('HTTP '+r.status))}</div>`; return; }
-    const s=d.summary, cls=s.total_pnl>=0?'pos':'neg';
+    const s=d.summary, cls=s.total_pnl>=0?'pos':'neg', ov=s.strategy==="overnight";
+    const setLine = ov
+      ? `단타 · 노출 ${Math.round(s.exposure*100)}% · ${s.gate?'Risk-Off 쉬기':'모든 밤'} · 매매 ${s.trade_nights}박`
+      : `노출 ×${s.exposure_mult} · 한도 ${s.cb_limit>0?'−'+Math.round(s.cb_limit*100)+'%':'끔'}${s.cb_limit>0?(s.cb_mode==='liq'?' 전량청산':' 신규중단'):''}`;
+    const tbl = ov
+      ? `<table><thead><tr><th>종목</th><th>밤</th><th class="num">1박 수익률</th><th class="num">손익</th></tr></thead><tbody>`+
+        d.trades.map(t=>`<tr><td><b>${esc(t.name||t.ticker)}</b> <span class="mono">${t.ticker}</span></td><td>${t.entry_date}</td><td class="num ${t.ret>=0?'pos':'neg'}">${P(t.ret)}</td><td class="num ${t.pnl>=0?'pos':'neg'}">${W(t.pnl)}</td></tr>`).join("")+`</tbody></table>`
+      : `<table><thead><tr><th>종목</th><th>진입→청산</th><th class="num">매수→매도가</th><th class="num">수량</th><th class="num">손익</th><th class="num">수익률</th><th>사유</th></tr></thead><tbody>`+
+        d.trades.map(t=>`<tr><td><b>${esc(t.name||t.ticker)}</b> <span class="mono">${t.ticker}</span></td><td>${t.entry_date}→${t.exit_date}</td><td class="num">${W(t.entry_price)}→${W(t.exit_price)}</td><td class="num">${t.shares}주</td><td class="num ${t.pnl>=0?'pos':'neg'}">${W(t.pnl)}</td><td class="num ${t.ret>=0?'pos':'neg'}">${P(t.ret)}</td><td class="sub">${esc(t.reason||'')}</td></tr>`).join("")+`</tbody></table>`;
     el.innerHTML=`<div class="card">
       <div class="summary-row">
         <div>기간<b>${s.start}~${s.end} (${s.days}거래일)</b></div><div>투자금<b>${W(s.capital)}</b></div>
         <div>최종 평가자산<b>${W(s.final_equity)}</b></div><div>총손익<b class="${cls}">${W(s.total_pnl)} (${P(s.total_ret)})</b></div>
         <div>MDD<b class="neg">${P(s.mdd)}</b></div><div>체결<b>${s.n_trades}건 · 승률 ${Math.round(s.win_rate*100)}%</b></div>
-        <div>설정<b>노출 ×${s.exposure_mult} · 한도 ${s.cb_limit>0?'−'+Math.round(s.cb_limit*100)+'%':'끔'}${s.cb_limit>0?(s.cb_mode==='liq'?' 전량청산':' 신규중단'):''}</b></div></div>
+        <div>설정<b>${setLine}</b></div></div>
       <canvas id="btChart" style="width:100%;height:130px;margin-top:8px"></canvas>
-      ${s.n_trades?`<div style="margin-top:8px"><b class="sub">체결 내역${s.n_trades>200?' (최근 200건)':''}</b>
-        <table><thead><tr><th>종목</th><th>진입→청산</th><th class="num">매수→매도가</th><th class="num">수량</th><th class="num">손익</th><th class="num">수익률</th><th>사유</th></tr></thead><tbody>`+
-        d.trades.map(t=>`<tr><td><b>${esc(t.name||t.ticker)}</b> <span class="mono">${t.ticker}</span></td><td>${t.entry_date}→${t.exit_date}</td><td class="num">${W(t.entry_price)}→${W(t.exit_price)}</td><td class="num">${t.shares}주</td><td class="num ${t.pnl>=0?'pos':'neg'}">${W(t.pnl)}</td><td class="num ${t.ret>=0?'pos':'neg'}">${P(t.ret)}</td><td class="sub">${esc(t.reason||'')}</td></tr>`).join("")+
-        `</tbody></table></div>`:'<div class="sub" style="margin-top:6px">청산된 거래 없음(기간이 짧거나 미청산).</div>'}</div>`;
+      ${s.n_trades?`<div style="margin-top:8px"><b class="sub">체결 내역${s.n_trades>200?' (최근 200건)':''}</b>`+tbl+`</div>`:'<div class="sub" style="margin-top:6px">체결 없음(기간이 짧거나 신호 없음).</div>'}
+      ${ov?'<div class="sub" style="margin-top:6px">단타는 얇은 엣지(중앙값은 비용 미달)이며 100% 운용 시 낙폭이 큽니다 — 총자산 30% 이하 권장. 생존편향 유니버스라 절대수치는 낙관적.</div>':''}</div>`;
     drawSimChart(d.equity_curve||[], s.capital, "btChart");
   }catch(e){ el.innerHTML=`<div class="warn">백테스트 오류: ${esc(""+e)}</div>`; }
 };

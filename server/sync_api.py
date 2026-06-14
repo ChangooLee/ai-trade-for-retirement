@@ -137,9 +137,19 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(400, {"error": "파라미터 오류"})
         if not (10000 <= cap <= 100_000_000_000):
             return self._send(400, {"error": "투자금 범위 오류"})
-        cb_mode = "liq" if g("cb_mode", "block") == "liq" else "block"
-        cmd = [sys.executable, "-m", "app.sim.backtest_cli", "--start", start, "--end", end,
-               "--capital", str(cap), "--exposure-mult", str(mult), "--cb-limit", str(cb), "--cb-mode", cb_mode]
+        strategy = "overnight" if g("strategy", "swing") == "overnight" else "swing"
+        if strategy == "overnight":           # 단타(오버나이트): 노출 비중·게이트만
+            try:
+                exposure = float(g("exposure", "0.3"))
+            except ValueError:
+                return self._send(400, {"error": "파라미터 오류"})
+            gate = "on" if g("gate", "off") == "on" else "off"
+            cmd = [sys.executable, "-m", "app.sim.overnight_cli", "--start", start, "--end", end,
+                   "--capital", str(cap), "--exposure", str(max(0.0, min(1.0, exposure))), "--gate", gate]
+        else:
+            cb_mode = "liq" if g("cb_mode", "block") == "liq" else "block"
+            cmd = [sys.executable, "-m", "app.sim.backtest_cli", "--start", start, "--end", end,
+                   "--capital", str(cap), "--exposure-mult", str(mult), "--cb-limit", str(cb), "--cb-mode", cb_mode]
         try:
             p = subprocess.run(cmd, cwd=os.path.join(ROOT, ".."), capture_output=True, text=True, timeout=60)
             lines = [ln for ln in (p.stdout or "").splitlines() if ln.strip()]

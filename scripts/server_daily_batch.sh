@@ -22,6 +22,8 @@ LOG="$ROOT/logs/batch_$(date +%Y%m%d).log"
   "$PY" -m app.batch.run_sims
   echo "-- 5) 기간 백테스트 아카이브 증분 갱신(state/bt_days.json·bt_prices.parquet)"
   "$PY" -m app.batch.build_bt_archive
+  echo "-- 6) 단타 백테스트 아카이브 증분 갱신(state/overnight_days.json)"
+  "$PY" -m app.batch.build_overnight_archive
   echo "==== $(date '+%F %T') 종료 (rc=$rc) ===="
 } >> "$LOG" 2>&1
 # 로그 30일 보관
