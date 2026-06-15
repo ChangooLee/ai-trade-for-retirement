@@ -32,29 +32,30 @@ def main():
         if h not in uni:
             uni.append(h)
     existing = pd.read_parquet(OUT) if os.path.exists(OUT) else pd.DataFrame(columns=COLS)
-    have = set(zip(existing["ticker"], existing["date"])) if len(existing) else set()
-    rows = []; done = 0; fail = 0
-    print(f"백필: {len(uni)}종목 × {len(dates)}일 ({dates[0]}~{dates[-1]})", file=sys.stderr)
-    for tk in uni:
-        got = 0
+    have = set(zip(existing["ticker"].astype(str), existing["date"].astype(str))) if len(existing) else set()
+    acc = [existing] if len(existing) else []
+    done = fail = total = 0
+    os.makedirs(os.path.dirname(OUT), exist_ok=True)
+    print(f"백필: {len(uni)}종목 × {len(dates)}일 ({dates[0]}~{dates[-1]}) — 종목마다 체크포인트", file=sys.stderr)
+    for ti, tk in enumerate(uni):
+        trows = []
         for d in dates:
             if (tk, d) in have:
                 continue
             try:
                 bars = K.get_minute_bars(tk, d)
-                rows += [{"ticker": tk, **b} for b in bars]; got += len(bars); done += 1
+                trows += [{"ticker": tk, **b} for b in bars]; done += 1
             except Exception as e:
                 fail += 1; print(f"  {tk} {d} 실패: {str(e)[:80]}", file=sys.stderr)
             time.sleep(0.05)
-        print(f"  {tk}: +{got}행", file=sys.stderr)
-    if rows:
-        alld = pd.concat([existing, pd.DataFrame(rows)], ignore_index=True).drop_duplicates(["ticker", "date", "time"])
-        os.makedirs(os.path.dirname(OUT), exist_ok=True)
-        alld.to_parquet(OUT)
-        print(f"적재 완료: +{len(rows)}행({done}종목일, 실패{fail}) → 총 {len(alld):,}행 · "
-              f"{alld['ticker'].nunique()}종목 · {alld['date'].nunique()}일")
-    else:
-        print("신규 적재 없음(이미 보유)")
+        if trows:
+            acc.append(pd.DataFrame(trows)); total += len(trows)
+            alld = pd.concat(acc, ignore_index=True).drop_duplicates(["ticker", "date", "time"])
+            alld.to_parquet(OUT)                                  # 체크포인트(크래시·재시작 안전)
+            print(f"  [{ti+1}/{len(uni)}] {tk}: +{len(trows)}행 → 총 {len(alld):,} ({alld['date'].nunique()}일)", file=sys.stderr)
+        else:
+            print(f"  [{ti+1}/{len(uni)}] {tk}: 신규없음", file=sys.stderr)
+    print(f"백필 완료: +{total:,}행(성공 {done}종목일·실패 {fail})")
 
 
 if __name__ == "__main__":
