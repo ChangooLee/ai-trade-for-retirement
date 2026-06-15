@@ -1100,8 +1100,15 @@ function updTickLbl(){ const p=+document.getElementById("price").value||0;
   el.addEventListener("touchend",()=>{dragY=null;});
 })();
 function initialCf(){ let c=cashflows.find(x=>x.initial); if(!c){ c={date:DATA.meta.asof,amount:0,note:"초기 투입",initial:true}; cashflows.unshift(c);} return c; }
-document.getElementById("capital").value=initialCf().amount;
-document.getElementById("capital").addEventListener("change",e=>{initialCf().amount=+e.target.value||0;save();render();});
+(function(){
+  const capEl=document.getElementById("capital");
+  capEl.value=initialCf().amount;
+  const saveCap=imm=>{ initialCf().amount=+capEl.value||0; saveLocal(); pushToCloud(!!imm); render(); };
+  capEl.addEventListener("input", ()=>saveCap(false));   // 타이핑 중: 로컬 저장 + 디바운스 클라우드
+  capEl.addEventListener("change", ()=>saveCap(true));   // 확정(blur/엔터): 즉시 클라우드 푸시
+})();
+// 페이지 이탈 직전 미저장(_dirty) 변경 마지막 플러시 — 디바운스 전 새로고침 유실 방지
+window.addEventListener("pagehide", ()=>{ if(_dirty && idToken) { try{ doPush(); }catch(e){} } });
 document.getElementById("bdate").value=DATA.meta.asof;
 document.getElementById("foot").innerHTML=`데이터: KRX 공식 API 종가(EOD), 매 거래일 갱신. 신호는 기준일 종가로 계산하고 집행은 다음 거래일 시가를 가정합니다. 보유·자본·매매일지는 이 브라우저에 저장되며, 구글 로그인 시 본인 서버에 동기화되어 기기 간 동일하게 보입니다.<br>검증: 전략 성과는 상장폐지 포함 PIT 패널로 검증(생존편향 제거, 위 카드). 단 라이브 후보는 현재 상장 종목에서 선정되고, 레짐 의존(2018·2019·2022·2024 음)이며 MDD가 깊어 서킷브레이커로 한도 관리합니다. 개별 종목의 수익은 보장하지 않습니다. 생성 ${DATA.meta.generated}`;
 renderHoldInput();render();

@@ -61,6 +61,14 @@ def main():
     ap.add_argument("--top", type=int, default=300)
     ap.add_argument("--universe", choices=["turnover", "mktcap"], default="mktcap",
                     help="유니버스 선정 기준: 거래대금(turnover) vs 시가총액(mktcap)")
+    ap.add_argument("--entry", choices=["pullback", "breakout", "both"], default="pullback",
+                    help="진입: 눌림(현행) / 추세돌파(52주고점 근접) / 둘다")
+    ap.add_argument("--bo-thr", dest="bo_thr", type=float, default=0.95,
+                    help="돌파 임계: high_52w_ratio ≥ 이 값 (0.95 = 52주고점 −5% 이내)")
+    ap.add_argument("--exit", choices=["time", "ma20w", "trail", "ma_or_time"], default="time",
+                    help="청산: time(40일·현행) / ma20w(20주선이탈까지 보유=승자라이딩) / trail(추적손절) / ma_or_time(둘중 먼저)")
+    ap.add_argument("--hold", type=int, default=None, help="시간청산 일수(기본=config 40)")
+    ap.add_argument("--trail", type=float, default=0.20, help="추적손절 비율(고점 대비)")
     args = ap.parse_args()
     cfg = yaml.safe_load(open("config/strategy.yaml", encoding="utf-8"))
     H = cfg["holding"]["max_holding_days"]; cost = cfg["cost"]["assumed_round_trip_cost"]
@@ -103,9 +111,22 @@ def main():
         t = cal[i]
         held = sum(p["sh"] * (px(cls, i, tk) or px(cls, max(i - 5, 0), tk) or 0) for tk, p in pos.items())
         eqc.append((t, cash + held))
-        # 청산
+        wa = wk[wk["week_end"] <= last_completed_week_cutoff(t)].sort_values(["ticker", "week_end"]).groupby("ticker").tail(1)
+        wma20 = dict(zip(wa["ticker"], wa["w_ma20"]))      # 종목별 20주선(청산용)
+        hold = args.hold or H
+        # 청산 (time 40일 / 20주선이탈까지 보유 / 추적손절)
         for tk, p in list(pos.items()):
-            if (i - p["eidx"]) >= H:
+            cp = px(cls, i, tk)
+            if cp: p["peak"] = max(p.get("peak", p["epx"]), cp)
+            cpx = cp or p["epx"]; held_days = i - p["eidx"]; do_exit = False
+            if args.exit in ("time", "ma_or_time") and held_days >= hold:
+                do_exit = True
+            if args.exit in ("ma20w", "ma_or_time"):
+                wm = wma20.get(tk)
+                if wm and wm > 0 and cpx < wm: do_exit = True
+            if args.exit == "trail" and cpx < p.get("peak", p["epx"]) * (1 - args.trail):
+                do_exit = True
+            if do_exit:
                 sp, _ = sell_px(i + 1, tk)
                 if sp <= 0:
                     writeoffs += 1; trades.append(-1.0); del pos[tk]; continue
@@ -127,10 +148,12 @@ def main():
         weight = compute_weight_per_stock(exp["target_exposure"], slots)
         if slots > len(pos):
             lead = compute_leader_flags(u, cfg)
-            wa = wk[wk["week_end"] <= last_completed_week_cutoff(t)].sort_values(["ticker", "week_end"]).groupby("ticker").tail(1)
-            pull = compute_pullback_flags(wa, cfg)
+            pull = compute_pullback_flags(wa, cfg)        # wa는 위(청산)에서 계산됨
             mg = lead.merge(pull[["ticker", "pullback_20w_105"]], on="ticker", how="left")
-            cands = mg[mg["is_f_leader"] & mg["pullback_20w_105"].fillna(False)].sort_values("rs_rank", ascending=False)
+            pb = mg["pullback_20w_105"].fillna(False)
+            bo = (mg["high_52w_ratio"] >= args.bo_thr) if "high_52w_ratio" in mg.columns else pd.Series(False, index=mg.index)
+            ec = pb if args.entry == "pullback" else (bo if args.entry == "breakout" else (pb | bo))
+            cands = mg[mg["is_f_leader"] & ec].sort_values("rs_rank", ascending=False)
             eq_now = cash + sum(p["sh"] * (px(cls, i, tk) or p["epx"]) for tk, p in pos.items())
             for tk in cands["ticker"]:
                 if len(pos) >= slots: break
@@ -164,14 +187,17 @@ def main():
     shp = r.mean() / r.std() * math.sqrt(52) if r.std() > 0 else 0
     winr = float(np.mean([x > 0 for x in trades])) if trades else 0
     bench_cum = float(np.prod([1 + b for b in bench])) - 1 if bench else 0
-    print(f"\n=== PIT(생존편향 제거) 백테스트 [유니버스={args.universe}] {eqc[0][0].date()}~{cal[end_idx].date()} ===")
+    mid = eqdf.index[len(eqdf) // 2]
+    h1 = eqdf.loc[:mid, "eq"]; h2 = eqdf.loc[mid:, "eq"]
+    print(f"\n=== PIT(생존편향 제거) [유니버스={args.universe} top{args.top} · 진입={args.entry}"
+          f"{(' bo≥'+str(args.bo_thr)) if args.entry!='pullback' else ''} · 청산={args.exit}"
+          f"{('('+str(args.hold or H)+'일)') if args.exit in ('time','ma_or_time') else ''}] {eqc[0][0].date()}~{cal[end_idx].date()} ===")
     print(f"  최종자산   ₩{final_eq:,.0f}  (총 {final_eq/cap0-1:+.1%})")
     print(f"  CAGR {cagr:+.1%} | MDD {dd:+.1%} | Sharpe {shp:.2f}")
     print(f"  거래 {len(trades)}건 · 승률 {winr:.1%} · 평균 {np.mean(trades) if trades else 0:+.2%} · 상폐 전손 {writeoffs}건")
+    print(f"  전반({h1.index[0].date()}~{mid.date()}) {h1.iloc[-1]/h1.iloc[0]-1:+.1%} · 후반({mid.date()}~) {h2.iloc[-1]/h2.iloc[0]-1:+.1%}  (과최적 가드)")
     print(f"  [PIT 기준선] 시점별 상위{args.top} 동일가중 누적 {bench_cum:+.1%}")
-    print("  연도별:")
-    for yr, g in eqdf.groupby(eqdf.index.year):
-        print(f"    {yr}: {g['eq'].iloc[-1]/g['eq'].iloc[0]-1:+.1%}")
+    print("  연도별:", "  ".join(f"{yr} {g['eq'].iloc[-1]/g['eq'].iloc[0]-1:+.0%}" for yr, g in eqdf.groupby(eqdf.index.year)))
 
 
 if __name__ == "__main__":
