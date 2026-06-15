@@ -87,6 +87,43 @@ def get_prices(tickers):
     return out
 
 
+def get_minute_bars(ticker, date, market="J"):
+    """date(YYYYMMDD)의 1분봉 전체(≈09:00~15:30) 페이지네이션 수집 → 시간오름차순 list[dict].
+    FHKST03010230: 호출당 120건, FID_INPUT_HOUR_1 기준 과거방향. 보관 약 1년."""
+    key, sec = _load_env(); tok = get_token()
+    bars = {}; hour = "153000"
+    for _ in range(8):                                   # 120*8>391, 안전 상한
+        r = requests.get(f"{BASE}/uapi/domestic-stock/v1/quotations/inquire-time-dailychartprice",
+                         headers={"authorization": f"Bearer {tok}", "appkey": key, "appsecret": sec,
+                                  "tr_id": "FHKST03010230", "custtype": "P"},
+                         params={"FID_COND_MRKT_DIV_CODE": market, "FID_INPUT_ISCD": ticker,
+                                 "FID_INPUT_DATE_1": date, "FID_INPUT_HOUR_1": hour,
+                                 "FID_PW_DATA_INCU_YN": "Y", "FID_FAKE_TICK_INCU_YN": "N"}, timeout=15)
+        if r.status_code != 200:
+            raise RuntimeError(f"분봉 조회 실패 {r.status_code}: {r.text[:160]}")
+        o2 = r.json().get("output2") or []
+        before = len(bars)
+        for b in o2:
+            t = b.get("stck_cntg_hour")
+            if not t or t in bars:
+                continue
+            try:
+                bars[t] = {"date": date, "time": t, "open": float(b["stck_oprc"]), "high": float(b["stck_hgpr"]),
+                           "low": float(b["stck_lwpr"]), "close": float(b["stck_prpr"]), "vol": float(b.get("cntg_vol") or 0)}
+            except (KeyError, ValueError, TypeError):
+                pass
+        if not bars or len(bars) == before:
+            break
+        earliest = min(bars)
+        if earliest <= "090000":
+            break
+        m = int(earliest[:2]) * 60 + int(earliest[2:4]) - 1     # 다음 페이지: 최소시각 −1분
+        if m < 540:
+            break
+        hour = f"{m // 60:02d}{m % 60:02d}00"; time.sleep(0.06)
+    return [bars[t] for t in sorted(bars)]
+
+
 if __name__ == "__main__":   # 검증: 삼성전자 현재가 (시크릿 미출력)
     import sys
     tks = sys.argv[1:] or ["005930"]
