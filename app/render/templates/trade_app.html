@@ -25,6 +25,10 @@ h2{font-size:15px;margin:22px 0 9px;font-weight:700;letter-spacing:-.2px;color:v
 .up-c{color:var(--up);border-color:var(--up)}.half-c{color:var(--ink2)}.down-c{color:var(--down);border-color:var(--down)}
 .banner .k{font-size:10.5px;color:var(--mut)}.banner b{color:var(--ink);font-size:14px;font-weight:700}
 .warn{background:#211d10;border:1px solid #4a4020;border-left:3px solid #e0a93b;border-radius:8px;padding:9px 13px;font-size:12.5px;margin:8px 0;color:#e7d8ad}
+.tip{position:relative;border-bottom:1px dotted currentColor;cursor:help;outline:none}
+.tip>sup{font-size:8.5px;color:var(--mut);margin-left:1px}
+.tip::after{content:attr(data-tip);position:absolute;left:0;top:145%;z-index:60;width:min(250px,74vw);background:#1c1f26;border:1px solid var(--line2);border-radius:8px;padding:8px 10px;font-size:11px;line-height:1.55;color:#e2e6ec;white-space:normal;text-align:left;font-weight:400;box-shadow:0 6px 18px rgba(0,0,0,.55);opacity:0;visibility:hidden;transition:opacity .12s}
+.tip:hover::after,.tip:focus::after{opacity:1;visibility:visible}
 .cards{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;box-shadow:0 1px 2px rgba(10,11,13,.03)}
 .card.buy{border-left:3px solid var(--buy)}.card.hold{border-left:3px solid var(--line2)}.card.sell{border-left:3px solid var(--up)}.card.imminent{border-left:3px solid #e0a93b}
@@ -683,6 +687,8 @@ function levelRows(tk,cur){
   } else rows+=`<div>손절가(참고) <b>—</b></div>`;
   return rows;
 }
+// 용어 툴팁 — 탭(모바일·tabindex 포커스) 또는 호버(데스크톱)로 설명. 카드 클릭(매도팝업) 전파 차단.
+function tip(label,text){ return `<span class="tip" tabindex="0" data-tip="${text}" onclick="event.stopPropagation()">${label}<sup>❓</sup></span>`; }
 // ---- 개별 진단: 시스템 규칙·지표 기준 보유 판정(가격 예측 아님). 건강/주의/고위험.
 function diagBlock(h){
   const s=meta(h.ticker), cur=h.cur;
@@ -691,12 +697,18 @@ function diagBlock(h){
   const cush=(s.wma20&&cur)?(cur/s.wma20-1):null;          // 20주선 위 쿠션(=손절까지 거리)
   const leader=!!s.leader, rs=Math.round(s.rs||0);
   let lvl=(cush==null)?1:(cush>0.8?2:cush>0.35?1:0);        // 0건강 1주의 2고위험
-  if(lvl===0&&!leader) lvl=1;                               // F리더 아니면 최소 주의
+  if(lvl===0&&!leader) lvl=1;                               // 주도주 아니면 최소 주의
   const tier=["🟢 건강 보유","🟡 주의 보유","🔴 고위험 보유"][lvl];
   const col=["var(--buy)","#e0a93b","var(--up)"][lvl], bg=["#0f1a12","#211d10","#1a1113"][lvl];
-  const p=[leader?`강한 리더(RS ${rs})`:`F리더 아님(RS ${rs})`];
-  if(cush!=null) p.push(`20주선 +${(cush*100).toFixed(0)}% (손절선 ${cush>0.8?'매우 멀어 하방 큼':cush>0.35?'다소 멀음':'가까움'})`);
-  p.push(s.pullback?'눌림 진입대':'고점권(전략 진입대 아님)');
+  const T_RS="상대강도 — 전체 종목 중 얼마나 더 세게 올랐는지 순위. 97이면 상위 3%(가장 센 축).";
+  const T_FL="주도주 — ①다른 종목보다 강하게 오르고(RS 높음) ②이동평균선(평균 주가 흐름선)이 가지런히 정렬된 종목. 둘 다 충족해야 인정.";
+  const T_MA="20주선 — 최근 약 5개월간 평균 주가선. 우리 손절 기준선(주가가 이 선 아래로 내려가면 매도).";
+  const T_PB="20주선 근처(살짝 위) — 잠깐 쉬어가는 자리라 사기 좋은 위치.";
+  const T_HI="평균선보다 한참 위 — 너무 올라 비싼 상태. 여기서 사면 위험.";
+  const p=[];
+  p.push((leader?'강한 ':'')+tip(leader?'주도주':'주도주 아님',T_FL)+` (${tip('RS',T_RS)} ${rs})`);
+  if(cush!=null) p.push(`${tip('20주선',T_MA)} +${(cush*100).toFixed(0)}% (손절선 ${cush>0.8?'매우 멀어 하방 큼':cush>0.35?'다소 멀음':'가까움'})`);
+  p.push(s.pullback?tip('눌림 진입대',T_PB):tip('고점권',T_HI));
   return `<div class="warn" style="border-left-color:${col};background:${bg};color:#dcdfe4"><b>시스템 진단: ${tier}</b> <span class="sub">${p.join(' · ')}</span></div>`;
 }
 function paintCharts(){document.querySelectorAll("canvas[data-tk]").forEach(cv=>{const s=DATA.stocks[cv.dataset.tk]||(DATA.broad&&DATA.broad[cv.dataset.tk]);drawChart(cv,s&&s.daily);});}
