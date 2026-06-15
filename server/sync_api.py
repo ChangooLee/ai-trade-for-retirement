@@ -122,7 +122,25 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, res)
         if path == "/api/backtest":
             return self._backtest()
+        if path == "/api/quote":
+            return self._quote()
         return self._send(404, {"error": "not found"})
+
+    def _quote(self):
+        """KIS 실시간 시세(읽기전용). 로그인 사용자만 — 공개 남용으로 KIS 쿼터 소모 방지."""
+        import urllib.parse, re as _re, importlib
+        if not self._auth():
+            return self._send(401, {"error": "unauthorized"})
+        q = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+        codes = [c for c in (q.get("codes") or [""])[0].split(",") if _re.match(r"^\d{6}$", c)][:40]
+        if not codes:
+            return self._send(400, {"error": "codes 필요(6자리, 최대 40)"})
+        try:
+            sys.path.insert(0, os.path.join(ROOT, ".."))
+            kis = importlib.import_module("app.data.kis_api")
+            return self._send(200, {"quotes": kis.get_prices(codes)})
+        except Exception as e:
+            return self._send(500, {"error": str(e)[:200]})
 
     def _backtest(self):
         import urllib.parse, subprocess, re as _re

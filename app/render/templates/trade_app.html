@@ -134,7 +134,7 @@ details{margin-top:6px}summary{cursor:pointer;color:var(--ink2);font-size:12.5px
   <div><label>현금 투자액 · 원금(원)</label><input id="capital" type="number" style="width:150px"><span class="sub" style="display:block">실제 투입한 현금. 월 손실한도의 기준.</span></div>
 </div>
 
-<h2>내 포트폴리오 <span class="sub" style="font-weight:400" id="pfSub"></span></h2>
+<h2>내 포트폴리오 <span class="sub" style="font-weight:400" id="pfSub"></span> <span id="liveTag" class="sub" style="font-weight:400;margin-left:6px"></span></h2>
 <div class="summary-row" id="pfSummary"></div>
 <div id="cbBanner"></div>
 <div class="warn" style="border-left-color:var(--line2);background:#15171c;color:#c8ccd2">
@@ -363,6 +363,23 @@ window.gLogout = ()=>{ try{ google.accounts.id.disableAutoSelect(); }catch(e){} 
 // ---- 알고리즘 시뮬레이터 (로그인 사용자, 백엔드 배치가 매일 운영) ----
 const SIM_API = "/trading/api/sim";
 let simData = null;
+// ---- KIS 실시간 시세(읽기전용) — 보유 종목 현재가 폴링 → 카드 평가손익·진단 라이브 갱신 ----
+const QUOTE_API = "/trading/api/quote";
+async function refreshQuotes(){
+  if(!idToken) return;
+  const codes=[...new Set(holdings.map(h=>h.ticker))].filter(t=>/^\d{6}$/.test(t)).slice(0,40);
+  if(!codes.length) return;
+  try{
+    const r=await fetch(QUOTE_API+"?codes="+codes.join(","),{headers:{Authorization:"Bearer "+idToken}});
+    if(!r.ok) return;
+    const d=await r.json(); let n=0;
+    for(const tk in (d.quotes||{})){ const v=d.quotes[tk]; if(v && v.price>0){ LIVE[tk]=v.price; n++; } }
+    if(n){ const t=new Date(), el=document.getElementById("liveTag");
+      if(el) el.innerHTML=`<span style="color:var(--up)">● 실시간</span> ${String(t.getHours()).padStart(2,"0")}:${String(t.getMinutes()).padStart(2,"0")} 갱신`;
+      render(); }
+  }catch(e){}
+}
+setInterval(()=>{ const p=document.getElementById("panel-portfolio"); if(idToken && p && p.classList.contains("active")) refreshQuotes(); }, 45000);
 // 시뮬 캐시 — 마지막 서버 상태를 이 기기에 보관(토큰 만료에도 사라지지 않게). 계정(sub)·갱신일·시각 태깅.
 const SIM_TTL = 24*3600*1000;   // 비로그인 읽기전용 캐시 수명(누수 방지)
 function simCacheClear(){ try{ localStorage.removeItem(LSSIM); }catch(e){} }
@@ -595,7 +612,9 @@ function cbStatus(total){   // 당월 손익을 '현금 투자액(원금)' 대�
 }
 const ALL = DATA.all_stocks || {};   // 코드 -> [이름, 종가, 시장] (전 상장종목)
 const BROAD = DATA.broad || {};      // 유니버스 밖 + 분석(지표·TDA 스칼라, 차트 없음)
-function meta(tk){   // stocks(풀+차트) → broad(분석·차트없음) → all_stocks(가격만)
+let LIVE = {};   // KIS 실시간 시세 오버라이드 {ticker: price} — 있으면 EOD 종가 대신 사용
+function meta(tk){ const m=_meta(tk); if(LIVE[tk]!=null && m.cur!=null) m.cur=LIVE[tk]; return m; }
+function _meta(tk){   // stocks(풀+차트) → broad(분석·차트없음) → all_stocks(가격만)
   const s = DATA.stocks[tk];
   if(s) return {name:s.name, market:s.market, sector:s.sector, cur:s.close, analyzed:true, chart:true,
                 tda:s.tda, swing20:s.swing20, high52:s.high52, dist_wma20:s.dist_wma20, rs:s.rs, leader:s.leader, pullback:s.pullback, wma20:s.wma20};
@@ -838,7 +857,7 @@ function render(){
           <div>매입액 <b>${W(h.cost)}</b> <span class="sub">${W(h.entry_price)}×${h.shares}주</span></div>
           <div>평가금액 <b>${W(h.value)}</b> <span class="sub">현재가×수량</span></div>
           <div>평가손익 <b class="${h.ret>=0?'pos':'neg'}">${W(h.value-h.cost)} (${P(h.ret)})</b></div>
-          <div>현재가 <b>${W(h.cur)}</b> <span class="sub">/ 진입 ${W(h.entry_price)}</span></div></div>
+          <div>현재가 <b>${W(h.cur)}</b>${LIVE[h.ticker]!=null?' <span class="sub" style="color:var(--up)">●실시간</span>':''} <span class="sub">/ 진입 ${W(h.entry_price)}</span></div></div>
         <div class="meta" style="color:#e0a93b">유니버스(상위 ${DATA.meta.universe_count}종목) 밖 — 가격·손익만 추적(차트·목표/손절·TDA 신호 미제공)</div></div>`);
       return;
     }
@@ -863,7 +882,7 @@ function render(){
         <div>매입액 <b>${W(h.cost)}</b> <span class="sub">${W(h.entry_price)}×${h.shares}주</span></div>
         <div>평가금액 <b>${W(h.value)}</b> <span class="sub">현재가×수량</span></div>
         <div>평가손익 <b class="${h.ret>=0?'pos':'neg'}">${W(h.value-h.cost)} (${P(h.ret)})</b></div>
-        <div>현재가 <b>${W(h.cur)}</b> <span class="sub">/ 진입 ${W(h.entry_price)}</span></div>
+        <div>현재가 <b>${W(h.cur)}</b>${LIVE[h.ticker]!=null?' <span class="sub" style="color:var(--up)">●실시간</span>':''} <span class="sub">/ 진입 ${W(h.entry_price)}</span></div>
         <div>청산예정 <b>${h.planned}</b> <span class="sub">(8주·D-${h.rem})</span></div>
         ${tdaLine}${levelRows(h.ticker,h.cur)}</div></div>`;
     if(isSell) sc.push(card); else hc.push(card);
@@ -1105,6 +1124,7 @@ function activateTab(p){
     try{ paintCharts(); }catch(e){}
     if(p==="sim" && simData && simData.active) try{ drawSimChart(simData.equity_curve||[], simData.investment, "simChart"); }catch(e){}
   }, 40);
+  if(p==="portfolio") try{ refreshQuotes(); }catch(e){}   // 보유 탭 진입 시 실시간 시세 갱신
 }
 document.querySelectorAll("#tabs .tab").forEach(t=>t.addEventListener("click",()=>activateTab(t.dataset.panel)));
 // ---- 매수가 호가단위(틱) 조정: 버튼·키보드·휠·모바일 드래그 ----
