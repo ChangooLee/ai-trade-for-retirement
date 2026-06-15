@@ -69,6 +69,8 @@ def main():
                     help="청산: time(40일·현행) / ma20w(20주선이탈까지 보유=승자라이딩) / trail(추적손절) / ma_or_time(둘중 먼저)")
     ap.add_argument("--hold", type=int, default=None, help="시간청산 일수(기본=config 40)")
     ap.add_argument("--trail", type=float, default=0.20, help="추적손절 비율(고점 대비)")
+    ap.add_argument("--exec", choices=["next_open", "next_close", "signal_close"], default="next_open",
+                    help="체결가(R1): 익일시가(현행)/익일종가/신호일종가")
     args = ap.parse_args()
     cfg = yaml.safe_load(open("config/strategy.yaml", encoding="utf-8"))
     H = cfg["holding"]["max_holding_days"]; cost = cfg["cost"]["assumed_round_trip_cost"]
@@ -102,6 +104,19 @@ def main():
                 return p, j
         return 0.0, None
 
+    def fill(i, tk, buy):
+        """체결가(--exec): next_open=익일시가 / next_close=익일종가 / signal_close=신호일종가.
+        buy=True 진입(폴백 없음) / False 청산(이후 40거래일 내 첫 유효가 폴백)."""
+        mat = opn if args.exec == "next_open" else cls
+        off = 0 if args.exec == "signal_close" else 1
+        if buy:
+            return px(mat, i + off, tk)
+        for j in range(i + off, min(i + off + 41, n)):
+            p = px(mat, j, tk)
+            if p is not None:
+                return p
+        return 0.0
+
     frm = pd.Timestamp(args.frm)
     rebal = [i for i in range(0, n - args.step - 1, args.step) if cal[i] >= frm]
     cash = float(cap0); pos = {}; eqc = []; trades = []; writeoffs = 0
@@ -127,7 +142,7 @@ def main():
             if args.exit == "trail" and cpx < p.get("peak", p["epx"]) * (1 - args.trail):
                 do_exit = True
             if do_exit:
-                sp, _ = sell_px(i + 1, tk)
+                sp = fill(i, tk, False)
                 if sp <= 0:
                     writeoffs += 1; trades.append(-1.0); del pos[tk]; continue
                 cash += p["sh"] * sp * (1 - cost / 2)
@@ -158,8 +173,8 @@ def main():
             for tk in cands["ticker"]:
                 if len(pos) >= slots: break
                 if tk in pos: continue
-                bp = px(opn, i + 1, tk)
-                if bp is None: continue
+                bp = fill(i, tk, True)
+                if bp is None or bp <= 0: continue
                 sh = math.floor(weight * eq_now / bp)
                 amt = sh * bp * (1 + cost / 2)
                 if sh > 0 and cash >= amt:
@@ -191,7 +206,7 @@ def main():
     h1 = eqdf.loc[:mid, "eq"]; h2 = eqdf.loc[mid:, "eq"]
     print(f"\n=== PIT(생존편향 제거) [유니버스={args.universe} top{args.top} · 진입={args.entry}"
           f"{(' bo≥'+str(args.bo_thr)) if args.entry!='pullback' else ''} · 청산={args.exit}"
-          f"{('('+str(args.hold or H)+'일)') if args.exit in ('time','ma_or_time') else ''}] {eqc[0][0].date()}~{cal[end_idx].date()} ===")
+          f"{('('+str(args.hold or H)+'일)') if args.exit in ('time','ma_or_time') else ''} · 체결={args.exec}] {eqc[0][0].date()}~{cal[end_idx].date()} ===")
     print(f"  최종자산   ₩{final_eq:,.0f}  (총 {final_eq/cap0-1:+.1%})")
     print(f"  CAGR {cagr:+.1%} | MDD {dd:+.1%} | Sharpe {shp:.2f}")
     print(f"  거래 {len(trades)}건 · 승률 {winr:.1%} · 평균 {np.mean(trades) if trades else 0:+.2%} · 상폐 전손 {writeoffs}건")
