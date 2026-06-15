@@ -133,6 +133,14 @@ details{margin-top:6px}summary{cursor:pointer;color:var(--ink2);font-size:12.5px
 <h2>내 포트폴리오 <span class="sub" style="font-weight:400" id="pfSub"></span></h2>
 <div class="summary-row" id="pfSummary"></div>
 <div id="cbBanner"></div>
+<div class="warn" style="border-left-color:var(--line2);background:#15171c;color:#c8ccd2">
+  <b>📋 보유 종목 분석 기준 (공통)</b>
+  <div class="sub" style="margin-top:5px;line-height:1.65">
+   • <b>청산 규칙</b>: 진입 후 <b>40거래일 시간청산</b> 또는 <b>20주선 이탈</b> 중 먼저. (TDA·익절·추적손절은 백테스트상 수익을 깎아 자동 매도로 안 씀 — 참고용.)<br>
+   • <b>🟢 건강</b> = F리더(강세) + 20주선 근처(손절 가까워 하방 작음). <b>🟡 주의</b> = 다소 고점이거나 F리더 아님. <b>🔴 고위험</b> = 20주선에서 멀리 떨어진 고점권(손절 발동까지 손실폭 큼).<br>
+   • 각 카드 <b>'시스템 진단'</b>이 종목별 판정 — 가격 예측이 아니라 우리 규칙·지표 기준 사실입니다.
+  </div>
+</div>
 <div class="cards" id="holdCards"></div>
 
 <h2>매도 알림 <span class="sub" style="font-weight:400">(시간청산 40거래일 · 20주선 이탈)</span></h2>
@@ -675,6 +683,22 @@ function levelRows(tk,cur){
   } else rows+=`<div>손절가(참고) <b>—</b></div>`;
   return rows;
 }
+// ---- 개별 진단: 시스템 규칙·지표 기준 보유 판정(가격 예측 아님). 건강/주의/고위험.
+function diagBlock(h){
+  const s=meta(h.ticker), cur=h.cur;
+  if(h.status==="매도예정")
+    return `<div class="warn" style="border-left-color:var(--up);background:#1a1113"><b>시스템 진단: 🔴 청산</b> <span class="sub">40거래일 시간청산 도달 — 다음 거래일 시가 매도</span></div>`;
+  const cush=(s.wma20&&cur)?(cur/s.wma20-1):null;          // 20주선 위 쿠션(=손절까지 거리)
+  const leader=!!s.leader, rs=Math.round(s.rs||0);
+  let lvl=(cush==null)?1:(cush>0.8?2:cush>0.35?1:0);        // 0건강 1주의 2고위험
+  if(lvl===0&&!leader) lvl=1;                               // F리더 아니면 최소 주의
+  const tier=["🟢 건강 보유","🟡 주의 보유","🔴 고위험 보유"][lvl];
+  const col=["var(--buy)","#e0a93b","var(--up)"][lvl], bg=["#0f1a12","#211d10","#1a1113"][lvl];
+  const p=[leader?`강한 리더(RS ${rs})`:`F리더 아님(RS ${rs})`];
+  if(cush!=null) p.push(`20주선 +${(cush*100).toFixed(0)}% (손절선 ${cush>0.8?'매우 멀어 하방 큼':cush>0.35?'다소 멀음':'가까움'})`);
+  p.push(s.pullback?'눌림 진입대':'고점권(전략 진입대 아님)');
+  return `<div class="warn" style="border-left-color:${col};background:${bg};color:#dcdfe4"><b>시스템 진단: ${tier}</b> <span class="sub">${p.join(' · ')}</span></div>`;
+}
 function paintCharts(){document.querySelectorAll("canvas[data-tk]").forEach(cv=>{const s=DATA.stocks[cv.dataset.tk]||(DATA.broad&&DATA.broad[cv.dataset.tk]);drawChart(cv,s&&s.daily);});}
 
 // ---- 렌더 ----
@@ -821,6 +845,7 @@ function render(){
         <button class="btn" onclick="event.stopPropagation();sellPopup('${h.ticker}','${h.entry_date}')">매도</button>
         <button class="btn x" onclick="event.stopPropagation();del('${h.ticker}','${h.entry_date}')">삭제</button></div>
       <div class="meta">진입 ${h.entry_date} @ ${W(h.entry_price)} × ${h.shares}주 · ${h.days}거래일 보유 / 남은 ${h.rem}일</div>
+      ${diagBlock(h)}
       ${reason}${h.chart?chartBlock(h.ticker):`<div class="meta" style="color:#8b8f97">차트 미제공(유니버스 상위 ${DATA.meta.universe_count} 외) · 지표·TDA 신호는 분석됨</div>`}
       <div class="plan">
         <div>매입액 <b>${W(h.cost)}</b> <span class="sub">${W(h.entry_price)}×${h.shares}주</span></div>
