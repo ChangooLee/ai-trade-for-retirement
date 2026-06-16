@@ -71,9 +71,13 @@ def main():
     ap.add_argument("--trail", type=float, default=0.20, help="추적손절 비율(고점 대비)")
     ap.add_argument("--exec", choices=["next_open", "next_close", "signal_close"], default="next_open",
                     help="체결가(R1): 익일시가(현행)/익일종가/신호일종가")
+    ap.add_argument("--dump-entries", dest="dump_entries", default=None,
+                    help="진입목록 CSV 경로(검증A: 신호일/진입일/종목/가정체결가)")
+    ap.add_argument("--cost-add", dest="cost_add", type=float, default=0.0,
+                    help="검증A: 측정 슬리피지를 왕복비용에 추가(소수, 예 0.003=+0.3%p)")
     args = ap.parse_args()
     cfg = yaml.safe_load(open("config/strategy.yaml", encoding="utf-8"))
-    H = cfg["holding"]["max_holding_days"]; cost = cfg["cost"]["assumed_round_trip_cost"]
+    H = cfg["holding"]["max_holding_days"]; cost = cfg["cost"]["assumed_round_trip_cost"] + args.cost_add
     cap0 = cfg["portfolio"]["initial_capital"]; maxpos = cfg["sizing"]["max_positions"]
     baseslot = cfg["sizing"]["base_slot_weight"]
     mc, ml = cfg["universe"]["min_close"], cfg["universe"]["min_listing_days"]
@@ -119,7 +123,7 @@ def main():
 
     frm = pd.Timestamp(args.frm)
     rebal = [i for i in range(0, n - args.step - 1, args.step) if cal[i] >= frm]
-    cash = float(cap0); pos = {}; eqc = []; trades = []; writeoffs = 0
+    cash = float(cap0); pos = {}; eqc = []; trades = []; writeoffs = 0; entries = []
     bench = []
     print(f"리밸런스 {len(rebal)}회 {cal[rebal[0]].date()}~{cal[rebal[-1]].date()}", file=sys.stderr)
     for cidx, i in enumerate(rebal):
@@ -180,6 +184,10 @@ def main():
                 if sh > 0 and cash >= amt:
                     cash -= amt; pos[tk] = {"eidx": i + 1, "epx": bp}
                     pos[tk]["sh"] = sh
+                    if args.dump_entries and i + 1 < n:
+                        entries.append({"signal_date": cal[i].strftime("%Y%m%d"),
+                                        "entry_date": cal[i + 1].strftime("%Y%m%d"),
+                                        "ticker": tk, "assumed_open": bp})
         # PIT 기준선(동일가중, 다음 리밸런스까지)
         if cidx + 1 < len(rebal):
             j = rebal[cidx + 1]
@@ -213,6 +221,9 @@ def main():
     print(f"  전반({h1.index[0].date()}~{mid.date()}) {h1.iloc[-1]/h1.iloc[0]-1:+.1%} · 후반({mid.date()}~) {h2.iloc[-1]/h2.iloc[0]-1:+.1%}  (과최적 가드)")
     print(f"  [PIT 기준선] 시점별 상위{args.top} 동일가중 누적 {bench_cum:+.1%}")
     print("  연도별:", "  ".join(f"{yr} {g['eq'].iloc[-1]/g['eq'].iloc[0]-1:+.0%}" for yr, g in eqdf.groupby(eqdf.index.year)))
+    if args.dump_entries:
+        pd.DataFrame(entries).to_csv(args.dump_entries, index=False)
+        print(f"  [진입덤프] {len(entries)}건 → {args.dump_entries}", file=sys.stderr)
 
 
 if __name__ == "__main__":
