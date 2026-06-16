@@ -9,8 +9,13 @@
 환경변수: GOOGLE_CLIENT_ID(필수, 공개값) · SYNC_PORT(기본 8799)
 """
 from __future__ import annotations
-import json, os, sys
+import json, os, sys, time, threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+# SSE 동시 스트림 상한(ThreadingHTTPServer는 스트림당 스레드 1개 점유) + 활성 카운터
+MAX_STREAMS = 64
+ACTIVE_STREAMS = 0
+ACTIVE_LOCK = threading.Lock()
 
 PORT = int(os.environ.get("SYNC_PORT", "8799"))
 CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
@@ -27,13 +32,9 @@ except Exception:                       # google-auth 미설치 시 — 검증 �
     _gid = None; _REQ = None
 
 
-def verify(headers):
-    """ID 토큰 검증 → 사용자 sub(숫자 문자열) 또는 None."""
-    if _gid is None or not CLIENT_ID:
-        return None
-    auth = headers.get("Authorization", "")
-    tok = auth[7:].strip() if auth.startswith("Bearer ") else ""
-    if not tok:
+def verify_token(tok):
+    """원시 ID 토큰 검증 → {"sub","email"} 또는 None. (헤더/쿼리 공용)"""
+    if _gid is None or not CLIENT_ID or not tok:
         return None
     try:
         info = _gid.verify_oauth2_token(tok, _REQ, CLIENT_ID)
@@ -45,6 +46,13 @@ def verify(headers):
         return {"sub": sub, "email": info.get("email", "")}
     except Exception:
         return None
+
+
+def verify(headers):
+    """Authorization: Bearer 헤더 검증 → 사용자 sub 또는 None."""
+    auth = headers.get("Authorization", "")
+    tok = auth[7:].strip() if auth.startswith("Bearer ") else ""
+    return verify_token(tok)
 
 
 def path_for(sub):
@@ -124,7 +132,57 @@ class Handler(BaseHTTPRequestHandler):
             return self._backtest()
         if path == "/api/quote":
             return self._quote()
+        if path == "/api/stream":
+            return self._stream()
         return self._send(404, {"error": "not found"})
+
+    def _stream(self):
+        """SSE — KIS WS 틱 캐시(app.data.kis_ws.LATEST)를 보유종목별로 푸시. EventSource는 헤더 못 보내 ?token= 인증.
+        장애/미지원 시 브라우저는 기존 4초 /api/quote 폴링으로 폴백(이 엔드포인트와 독립)."""
+        import urllib.parse, re as _re, importlib
+        global ACTIVE_STREAMS
+        q = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+        if not verify_token((q.get("token") or [""])[0]):
+            return self._send(401, {"error": "unauthorized"})
+        codes = [c for c in (q.get("codes") or [""])[0].split(",") if _re.match(r"^\d{6}$", c)][:40]
+        if not codes:
+            return self._send(400, {"error": "codes 필요(6자리)"})
+        try:
+            sys.path.insert(0, os.path.join(ROOT, ".."))
+            kis_ws = importlib.import_module("app.data.kis_ws")
+            kis_ws.start()
+        except Exception as e:
+            return self._send(503, {"error": f"ws unavailable: {str(e)[:120]}"})
+        with ACTIVE_LOCK:
+            if ACTIVE_STREAMS >= MAX_STREAMS:
+                return self._send(503, {"error": "too many streams"})
+            ACTIVE_STREAMS += 1
+        kis_ws.register(codes)
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache, no-transform")
+            self.send_header("X-Accel-Buffering", "no")     # nginx 버퍼링 방지(이중 안전장치)
+            self.end_headers()
+            self.wfile.write(b"retry: 4000\n\n"); self.wfile.flush()
+            prev, last = None, time.monotonic()
+            while True:
+                snap = kis_ws.snapshot(codes)
+                now = time.monotonic()
+                if snap != prev:
+                    self.wfile.write(b"event: price\ndata: " + json.dumps(snap).encode() + b"\n\n")
+                    self.wfile.flush(); prev, last = snap, now
+                elif now - last >= 20:
+                    self.wfile.write(b": keepalive\n\n"); self.wfile.flush(); last = now
+                time.sleep(1)                                # 1Hz로 캐시 폴링(WS는 더 빨리 LATEST 갱신, 합쳐서 전송)
+        except (BrokenPipeError, ConnectionResetError):
+            pass                                             # 클라이언트/nginx가 닫음 → 종료
+        except Exception:
+            pass
+        finally:
+            kis_ws.unregister(codes)
+            with ACTIVE_LOCK:
+                ACTIVE_STREAMS -= 1
 
     def _quote(self):
         """KIS 실시간 시세(읽기전용). 로그인 사용자만 — 공개 남용으로 KIS 쿼터 소모 방지."""

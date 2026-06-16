@@ -10,3 +10,5 @@ persim>=0.3.8
 pytest>=8.0
 # 동기화 API(server/sync_api.py) — 구글 ID 토큰 로컬 검증
 google-auth>=2.0
+# KIS 실시간 체결 WebSocket(app/data/kis_ws.py) — 틱 단위 보유 시세
+websocket-client>=1.7.0

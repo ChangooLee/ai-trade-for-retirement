@@ -363,35 +363,54 @@ window.gLogout = ()=>{ try{ google.accounts.id.disableAutoSelect(); }catch(e){} 
 // ---- 알고리즘 시뮬레이터 (로그인 사용자, 백엔드 배치가 매일 운영) ----
 const SIM_API = "/trading/api/sim";
 let simData = null;
-// ---- KIS 실시간 시세(읽기전용) — 보유 종목 현재가 폴링 → 카드 평가손익·진단 라이브 갱신 ----
-// 장중(평일 09:00~15:30 KST)엔 4초마다 폴링해 '거의 실시간'으로 보이게. 장마감엔 폴링 중단(시세 고정).
-const QUOTE_API = "/trading/api/quote";
+// ---- KIS 실시간 시세(읽기전용) — 틱 단위 WS(SSE)가 1차, 4초 REST 폴링이 폴백 ----
+// 틱: 서버가 KIS WS(H0STCNT0)를 상시 물고 SSE(/api/stream)로 푸시 → 보유 평가손익 틱 단위 갱신.
+// SSE가 끊기거나 미지원이면 4초 /api/quote 폴링으로 자동 폴백(둘은 상호 배타). 장마감엔 시세 고정.
+const QUOTE_API = "/trading/api/quote", STREAM_API = "/trading/api/stream";
 const QUOTE_INTERVAL = 4000;
-let _quoting = false;
+let _quoting = false, _es = null, _esFails = 0, _sseOK = false;
 function kstNow(){ return new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Seoul"})); }
+function pad2(x){ return String(x).padStart(2,"0"); }
 function marketOpen(){ const d=kstNow(), day=d.getDay(), hm=d.getHours()*60+d.getMinutes();
   return day>=1 && day<=5 && hm>=540 && hm<=932; }   // 평일 09:00~15:32(종가 동시호가 여유)
-function pad2(x){ return String(x).padStart(2,"0"); }
+function liveCodes(){ return [...new Set(holdings.map(h=>h.ticker))].filter(t=>/^\d{6}$/.test(t)).slice(0,40); }
+function applyLive(obj){ let n=0; for(const tk in (obj||{})){ const v=obj[tk]; if(v && v.price>0){ LIVE[tk]=v.price; n++; } } return n; }
+function liveTag(mode){ const el=document.getElementById("liveTag"); if(!el) return; const k=kstNow(), hms=`${pad2(k.getHours())}:${pad2(k.getMinutes())}:${pad2(k.getSeconds())}`;
+  el.innerHTML = mode==="tick" ? `<span style="color:var(--up)">● 실시간 틱</span> ${hms}`
+    : mode==="poll" ? `<span style="color:var(--up)">● 실시간</span> ${hms} (4초)`
+    : `<span class="sub">장마감 · 종가 기준 ${pad2(k.getHours())}:${pad2(k.getMinutes())} 조회</span>`; }
+
+// SSE(틱) — 1차 경로
+function startSSE(){
+  if(!window.EventSource || !idToken){ return; }
+  const codes=liveCodes(); if(!codes.length) return;
+  stopSSE();
+  _es=new EventSource(`${STREAM_API}?token=${encodeURIComponent(idToken)}&codes=${encodeURIComponent(codes.join(","))}`);
+  _es.addEventListener("price", e=>{ try{ if(applyLive(JSON.parse(e.data))){ liveTag("tick"); render(); } }catch(_){} });
+  _es.onopen=()=>{ _esFails=0; _sseOK=true; };
+  _es.onerror=()=>{ if(!_es) return; if(_es.readyState===EventSource.CLOSED || ++_esFails>=3){ stopSSE(); } };   // CLOSED/3연속실패 → 폴백
+}
+function stopSSE(){ if(_es){ try{_es.close();}catch(_){} _es=null; } _sseOK=false; }
+function reconnectLive(){ if(_es) startSSE(); }   // 보유 변경 시 새 codes로 재구독
+
+// REST 폴링(폴백) — SSE 비활성일 때만
 async function refreshQuotes(){
   if(!idToken || _quoting) return;
-  const codes=[...new Set(holdings.map(h=>h.ticker))].filter(t=>/^\d{6}$/.test(t)).slice(0,40);
-  if(!codes.length) return;
-  const open=marketOpen(), el=document.getElementById("liveTag");
+  const codes=liveCodes(); if(!codes.length) return;
   _quoting=true;
   try{
     const r=await fetch(QUOTE_API+"?codes="+codes.join(","),{headers:{Authorization:"Bearer "+idToken}});
     if(!r.ok) return;
-    const d=await r.json(); let n=0;
-    for(const tk in (d.quotes||{})){ const v=d.quotes[tk]; if(v && v.price>0){ LIVE[tk]=v.price; n++; } }
-    if(n){ const k=kstNow();
-      if(el) el.innerHTML = open
-        ? `<span style="color:var(--up)">● 실시간</span> ${pad2(k.getHours())}:${pad2(k.getMinutes())}:${pad2(k.getSeconds())} (4초 갱신)`
-        : `<span class="sub">장마감 · 종가 기준 ${pad2(k.getHours())}:${pad2(k.getMinutes())} 조회</span>`;
-      render(); }
+    const d=await r.json();
+    if(applyLive(d.quotes)) liveTag(marketOpen()?"poll":"closed");
+    render();
   }catch(e){}finally{ _quoting=false; }
 }
-setInterval(()=>{ const p=document.getElementById("panel-portfolio");
-  if(idToken && p && p.classList.contains("active") && marketOpen()) refreshQuotes();
+// 보유 탭 활성+로그인: SSE 우선, 끊기면 4초 폴링이 받친다(상호 배타).
+setInterval(()=>{ const p=document.getElementById("panel-portfolio"), active=p&&p.classList.contains("active");
+  if(!idToken || !active){ stopSSE(); return; }
+  if(!_es) startSSE();
+  if(!_sseOK && marketOpen()) refreshQuotes();
 }, QUOTE_INTERVAL);
 // 시뮬 캐시 — 마지막 서버 상태를 이 기기에 보관(토큰 만료에도 사라지지 않게). 계정(sub)·갱신일·시각 태깅.
 const SIM_TTL = 24*3600*1000;   // 비로그인 읽기전용 캐시 수명(누수 방지)
@@ -1006,7 +1025,7 @@ function renderHoldInput(){   // 입력 표는 제거(하단 보유 카드가 �
   const el=document.getElementById("holdInput"); if(el) el.innerHTML='';
 }
 window.del=function(tk,date){ if(!confirm("이 보유 기록을 삭제할까요? (오입력 정정용 — 매도 실적이 필요하면 종목을 클릭해 '매도'하세요)")) return;
-  holdings=holdings.filter(h=>!(h.ticker===tk&&h.entry_date===date));save();renderHoldInput();render();};
+  holdings=holdings.filter(h=>!(h.ticker===tk&&h.entry_date===date));save();renderHoldInput();render();reconnectLive();};
 // ---- 매수/매도 팝업(모달) ----
 function closeModal(){ document.querySelectorAll(".modalOv").forEach(o=>o.remove()); }
 function openModal(html){ closeModal(); const ov=document.createElement("div"); ov.className="modalOv";
@@ -1116,7 +1135,7 @@ function addHolding(){
   holdings.push({ticker:tk,entry_date:date,entry_price:price,shares:shares});save();
   document.getElementById("search").value="";document.getElementById("search").dataset.ticker="";
   document.getElementById("price").value="";document.getElementById("shares").value="";
-  renderHoldInput();render();
+  renderHoldInput();render();reconnectLive();   // 새 종목 틱 구독
 }
 // 검색 자동완성 (전 상장종목 — 유니버스 밖도 검색·추가 가능)
 const SRC = Object.keys(ALL).length ? ALL
@@ -1146,7 +1165,8 @@ function activateTab(p){
     try{ paintCharts(); }catch(e){}
     if(p==="sim" && simData && simData.active) try{ drawSimChart(simData.equity_curve||[], simData.investment, "simChart"); }catch(e){}
   }, 40);
-  if(p==="portfolio") try{ refreshQuotes(); }catch(e){}   // 보유 탭 진입 시 실시간 시세 갱신
+  if(p==="portfolio") try{ startSSE(); refreshQuotes(); }catch(e){}   // 보유 탭 진입: 틱 SSE 연결 + 즉시 1회 시세
+  else try{ stopSSE(); }catch(e){}                                    // 다른 탭: 스트림 종료(서버 WS 부담↓)
 }
 document.querySelectorAll("#tabs .tab").forEach(t=>t.addEventListener("click",()=>activateTab(t.dataset.panel)));
 // ---- 매수가 호가단위(틱) 조정: 버튼·키보드·휠·모바일 드래그 ----
