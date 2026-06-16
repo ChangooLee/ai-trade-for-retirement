@@ -19,7 +19,7 @@ import datetime as dt
 import re
 import sys
 
-from app.dart.client import corp_code_map, disclosures
+from app.dart.client import corp_code_map, disclosures, structured_terminal_events
 
 # 정규화: 선행 정정괄호 제거 → 가운뎃점/공백 제거 후 매칭(모든 패턴은 점·공백 없는 형태 가정)
 _BRACKET = re.compile(r"^(?:\[[^\]]*\])+")
@@ -81,17 +81,20 @@ TERMINAL = re.compile(
     r"(사채.{0,4}원리금.{0,4}미지급|원리금미지급)|"
     r"(회생절차개시|회생절차.{0,3}신청|파산|부도발생|당좌거래정지|해산사유발생)(?!.*종결)|"
     r"(완전자본잠식|자본전액잠식)")
-_OTHER_CO = re.compile(r"출자법인|타법인|관계회사|종속회사|관계기업")
-_SELF_TERMINAL = re.compile(r"상장폐지|매매거래정지|감사의견|의견거절|원리금미지급|완전자본잠식")
+# 제3자(출자/피보증/타법인) — 그 법인의 부도/회생이지 자기 보통주 distress 아님(자기 distress는 구조화 DS005가 잡음)
+_OTHER_CO = re.compile(r"출자법인|타법인|관계회사|종속회사|관계기업|피보증|담보법인")
 
 
 def is_terminal(report_nm: str) -> bool:
-    """터미널급(자동 매수제외 대상) 여부. crit 중에서도 상폐/정지/감사거절/부도/완전잠식만."""
-    if classify(report_nm) != "crit":           # 네거티브/회복 레이어 통과한 crit만
+    """터미널급(자동 매수제외 대상) 제목 여부. ★우선주·제3자법인 한정 시장조치는 보통주 distress 아님(FP) → 제외.★
+    부도/영업정지/회생/해산/채권관리는 구조화 DS005(client.structured_terminal_events)가 자기회사만 깨끗하게 잡음 —
+    이 제목 경로는 list.json의 KRX 시장조치(상폐/정지/실질심사)·감사의견 보완용."""
+    if classify(report_nm) != "crit":
         return False
     s = normalize(report_nm)
-    # 출자/타법인 회생·파산은 자기 상폐 아님 → 터미널 제외(자기 상폐류 동반 시는 유지)
-    if _OTHER_CO.search(s) and not _SELF_TERMINAL.search(s):
+    if "우선주" in s and "보통주" not in s:        # 우선주 한정 상폐/정지 ≠ 보통주(예: 'DB하이텍1우선주 상장폐지' FP)
+        return False
+    if _OTHER_CO.search(s):                         # 출자/피보증/타법인의 회생·파산 등(FP)
         return False
     return bool(TERMINAL.search(s))
 
@@ -112,11 +115,12 @@ def classify(report_nm: str):
     return None
 
 
-def annotate_tickers(tickers, days: int = 30, asof: str | None = None) -> dict:
-    """{ticker: {"crit": [...], "warn": [...]}} — 위험 공시 있는 종목만 반환.
+def annotate_tickers(tickers, days: int = 30, asof: str | None = None, structured: bool = False) -> dict:
+    """{ticker: {"crit":[...], "warn":[...], "terminal":[...]}} — 위험 공시 있는 종목만 반환.
 
-    각 항목: "MM-DD 보고서명(축약)". 미상장/매핑실패 종목은 건너뜀.
-    rcept_dt <= asof 행만 사용(룩어헤드 방지 — list.json은 bgn~end로 이미 제한되나 재확인).
+    각 항목: "MM-DD 사유(축약)". 미상장/매핑실패 종목은 건너뜀. rcept_dt <= asof 행만(룩어헤드 방지).
+    structured=True: 부도/영업정지/회생/해산/채권관리를 DS005 구조화 엔드포인트로도 조회해 terminal에 병합
+      (자기회사만·제목파싱 불요 — 우선주/피보증법인 FP 없음). 라이브 매수제외 경로에서 사용.
     """
     cmap = corp_code_map()
     end = asof or dt.date.today().strftime("%Y%m%d")
@@ -141,13 +145,30 @@ def annotate_tickers(tickers, days: int = 30, asof: str | None = None) -> dict:
             label = f"{it['rcept_dt'][4:6]}-{it['rcept_dt'][6:8]} {it['report_nm'][:30]}"
             if kind == "crit":
                 crit.append(label)
-                if is_terminal(it["report_nm"]):
+                if is_terminal(it["report_nm"]):          # 제목 경로(상폐/정지/실질심사/감사의견) — 우선주·제3자 가드 적용
                     terminal.append(label)
             else:
                 warn.append(label)
-        if crit or warn:
+        if structured:                                    # 구조화 DS005(부도/영업정지/회생/해산/채권관리 — 자기회사 깨끗)
+            try:
+                for ev in structured_terminal_events(corp, bgn, end):
+                    if ev["date"] <= end:
+                        terminal.append(f"{ev['date'][4:6]}-{ev['date'][6:8]} {ev['event']}(DS005)")
+            except Exception as e:
+                print(f"  ! DART 구조화 조회 실패 {tk}: {e}", file=sys.stderr)
+        if crit or warn or terminal:
             out[str(tk).zfill(6)] = {"crit": crit[:3], "warn": warn[:3], "terminal": terminal[:3]}
     return out
+
+
+def terminal_events(corp_code: str, bgn_de: str, end_de: str) -> list[str]:
+    """하이브리드 terminal 탐지 → 정렬된 rcept_dt 리스트.
+    (1) DS005 구조화(부도/영업정지/회생/해산/채권관리 — 자기회사) (2) list.json 제목 is_terminal(상폐/정지/실질심사/감사의견)."""
+    dates = {ev["date"] for ev in structured_terminal_events(corp_code, bgn_de, end_de)}
+    for it in disclosures(corp_code, bgn_de, end_de):
+        if it.get("rcept_dt") and it["rcept_dt"] <= end_de and is_terminal(it["report_nm"]):
+            dates.add(it["rcept_dt"])
+    return sorted(dates)
 
 
 def crit_tickers(flags: dict) -> set:

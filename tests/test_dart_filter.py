@@ -76,8 +76,12 @@ def test_terminal_subset():
     # 소프트 crit — 표시(crit)는 되나 터미널 아님(자동 제외 안 함)
     for nm in ["횡령·배임혐의발생", "불성실공시법인지정", "관리종목지정(자본잠식률50%이상)"]:
         assert F.classify(nm) == "crit" and not F.is_terminal(nm), f"소프트 crit 오판: {nm}"
-    # 출자법인 회생/파산 = 자기 상폐 아님 → 터미널 제외
+    # 출자/피보증법인 회생·파산 = 자기 distress 아님 → 터미널 제외(구조화 DS005가 자기회사만 잡음)
     assert not F.is_terminal("출자법인회생절차및파산관련결정")
+    assert not F.is_terminal("피보증(담보)법인회생절차및파산관련결정")   # 002380 FP
+    # 우선주 한정 상장폐지 ≠ 보통주 → 터미널 제외
+    assert not F.is_terminal("투자유의안내(DB하이텍1우선주 상장폐지 우려 예고)")   # 000990 FP
+    assert F.is_terminal("주권상장폐지 결정")                          # 보통주 상폐는 유지
     # 회복/호재는 애초에 crit 아님
     assert not F.is_terminal("주권매매거래정지해제")
 

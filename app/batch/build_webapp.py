@@ -269,7 +269,7 @@ def main():
         cand_pool + tda_buy + tda_sell + legacy_sell +
         [r["ticker"] for r in overnight["signals"]] + [r["ticker"] for r in overnight["watch"]]))
     try:
-        dart_flags = annotate_tickers(dart_targets, days=45, asof=asof_str)   # 터미널 흔적 ~30거래일 잔존
+        dart_flags = annotate_tickers(dart_targets, days=45, asof=asof_str, structured=True)   # 터미널 ~30거래일 잔존 + DS005 구조화(우선주/피보증 FP 없음)
         dart_excluded = sorted(terminal_tickers(dart_flags) & set(cand_pool))
         print(f"DART: 대상 {len(dart_targets)} · 위험 {len(dart_flags)} · 터미널 매수제외 {len(dart_excluded)}{dart_excluded}", file=sys.stderr)
     except Exception as e:
