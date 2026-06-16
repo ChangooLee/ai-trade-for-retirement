@@ -181,7 +181,7 @@ def main():
     # 양분할(신호일 중앙값) — 헤드라인 N=30
     buckets, prim, lab30 = headline
     fr30 = fr.copy(); fr30["bucket"] = lab30
-    med = fr30["signal_date"].median()
+    _sd = sorted(fr30["signal_date"]); med = _sd[len(_sd) // 2]      # 문자열 중앙값(YYYYMMDD 정렬)
     print(f"\n{'='*64}\n[양분할 N=30 robust] 분할 신호일 중앙값 {med}")
     half_ok = True
     for name, sub in [("전반", fr30[(fr30["signal_date"] <= med) & ~fr30["truncated"]]),
