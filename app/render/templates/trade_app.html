@@ -364,22 +364,35 @@ window.gLogout = ()=>{ try{ google.accounts.id.disableAutoSelect(); }catch(e){} 
 const SIM_API = "/trading/api/sim";
 let simData = null;
 // ---- KIS 실시간 시세(읽기전용) — 보유 종목 현재가 폴링 → 카드 평가손익·진단 라이브 갱신 ----
+// 장중(평일 09:00~15:30 KST)엔 4초마다 폴링해 '거의 실시간'으로 보이게. 장마감엔 폴링 중단(시세 고정).
 const QUOTE_API = "/trading/api/quote";
+const QUOTE_INTERVAL = 4000;
+let _quoting = false;
+function kstNow(){ return new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Seoul"})); }
+function marketOpen(){ const d=kstNow(), day=d.getDay(), hm=d.getHours()*60+d.getMinutes();
+  return day>=1 && day<=5 && hm>=540 && hm<=932; }   // 평일 09:00~15:32(종가 동시호가 여유)
+function pad2(x){ return String(x).padStart(2,"0"); }
 async function refreshQuotes(){
-  if(!idToken) return;
+  if(!idToken || _quoting) return;
   const codes=[...new Set(holdings.map(h=>h.ticker))].filter(t=>/^\d{6}$/.test(t)).slice(0,40);
   if(!codes.length) return;
+  const open=marketOpen(), el=document.getElementById("liveTag");
+  _quoting=true;
   try{
     const r=await fetch(QUOTE_API+"?codes="+codes.join(","),{headers:{Authorization:"Bearer "+idToken}});
     if(!r.ok) return;
     const d=await r.json(); let n=0;
     for(const tk in (d.quotes||{})){ const v=d.quotes[tk]; if(v && v.price>0){ LIVE[tk]=v.price; n++; } }
-    if(n){ const t=new Date(), el=document.getElementById("liveTag");
-      if(el) el.innerHTML=`<span style="color:var(--up)">● 실시간</span> ${String(t.getHours()).padStart(2,"0")}:${String(t.getMinutes()).padStart(2,"0")} 갱신`;
+    if(n){ const k=kstNow();
+      if(el) el.innerHTML = open
+        ? `<span style="color:var(--up)">● 실시간</span> ${pad2(k.getHours())}:${pad2(k.getMinutes())}:${pad2(k.getSeconds())} (4초 갱신)`
+        : `<span class="sub">장마감 · 종가 기준 ${pad2(k.getHours())}:${pad2(k.getMinutes())} 조회</span>`;
       render(); }
-  }catch(e){}
+  }catch(e){}finally{ _quoting=false; }
 }
-setInterval(()=>{ const p=document.getElementById("panel-portfolio"); if(idToken && p && p.classList.contains("active")) refreshQuotes(); }, 45000);
+setInterval(()=>{ const p=document.getElementById("panel-portfolio");
+  if(idToken && p && p.classList.contains("active") && marketOpen()) refreshQuotes();
+}, QUOTE_INTERVAL);
 // 시뮬 캐시 — 마지막 서버 상태를 이 기기에 보관(토큰 만료에도 사라지지 않게). 계정(sub)·갱신일·시각 태깅.
 const SIM_TTL = 24*3600*1000;   // 비로그인 읽기전용 캐시 수명(누수 방지)
 function simCacheClear(){ try{ localStorage.removeItem(LSSIM); }catch(e){} }
