@@ -71,6 +71,31 @@ WARN = re.compile(
     r"소송등의제기|조회공시요구")
 
 
+# TERMINAL — CRIT의 부분집합 중 '보유 불가' 터미널급(상식적 자동 제외 대상).
+#  제외(crit 표시는 유지하되 터미널 아님): 횡령·배임(혐의·노이즈), 불성실공시지정, 관리종목지정(회복가능), 자본잠식률(부분).
+TERMINAL = re.compile(
+    r"상장폐지(?!.*(취소|이의))|"
+    r"(상장적격성|실질심사|기업심사위원회)(?!.*(대상제외|대상결정기한|제외결정))|"
+    r"(주권매매거래정지|매매거래정지)(?!.*(해제|재개))|"
+    r"(의견거절|감사의견부적정|감사의견한정|비적정|범위제한|내부회계.{0,6}비적정)|"
+    r"(사채.{0,4}원리금.{0,4}미지급|원리금미지급)|"
+    r"(회생절차개시|회생절차.{0,3}신청|파산|부도발생|당좌거래정지|해산사유발생)(?!.*종결)|"
+    r"(완전자본잠식|자본전액잠식)")
+_OTHER_CO = re.compile(r"출자법인|타법인|관계회사|종속회사|관계기업")
+_SELF_TERMINAL = re.compile(r"상장폐지|매매거래정지|감사의견|의견거절|원리금미지급|완전자본잠식")
+
+
+def is_terminal(report_nm: str) -> bool:
+    """터미널급(자동 매수제외 대상) 여부. crit 중에서도 상폐/정지/감사거절/부도/완전잠식만."""
+    if classify(report_nm) != "crit":           # 네거티브/회복 레이어 통과한 crit만
+        return False
+    s = normalize(report_nm)
+    # 출자/타법인 회생·파산은 자기 상폐 아님 → 터미널 제외(자기 상폐류 동반 시는 유지)
+    if _OTHER_CO.search(s) and not _SELF_TERMINAL.search(s):
+        return False
+    return bool(TERMINAL.search(s))
+
+
 def classify(report_nm: str):
     """보고서명 → 'crit' | 'warn' | None. 네거티브/회복 레이어를 먼저 적용."""
     s = normalize(report_nm)
@@ -106,7 +131,7 @@ def annotate_tickers(tickers, days: int = 30, asof: str | None = None) -> dict:
         except Exception as e:
             print(f"  ! DART 조회 실패 {tk}: {e}", file=sys.stderr)
             continue
-        crit, warn = [], []
+        crit, warn, terminal = [], [], []
         for it in items:
             if it["rcept_dt"] and it["rcept_dt"] > end:   # 룩어헤드 방지
                 continue
@@ -114,12 +139,22 @@ def annotate_tickers(tickers, days: int = 30, asof: str | None = None) -> dict:
             if not kind:
                 continue
             label = f"{it['rcept_dt'][4:6]}-{it['rcept_dt'][6:8]} {it['report_nm'][:30]}"
-            (crit if kind == "crit" else warn).append(label)
+            if kind == "crit":
+                crit.append(label)
+                if is_terminal(it["report_nm"]):
+                    terminal.append(label)
+            else:
+                warn.append(label)
         if crit or warn:
-            out[str(tk).zfill(6)] = {"crit": crit[:3], "warn": warn[:3]}
+            out[str(tk).zfill(6)] = {"crit": crit[:3], "warn": warn[:3], "terminal": terminal[:3]}
     return out
 
 
 def crit_tickers(flags: dict) -> set:
-    """annotate_tickers 결과에서 crit 공시가 있는 종목코드 집합(매수 제외용)."""
+    """annotate_tickers 결과에서 crit 공시가 있는 종목코드 집합."""
     return {tk for tk, f in flags.items() if f.get("crit")}
+
+
+def terminal_tickers(flags: dict) -> set:
+    """터미널급(상폐/정지/감사거절/부도/완전잠식) 공시 종목 — 자동 매수제외 대상."""
+    return {tk for tk, f in flags.items() if f.get("terminal")}

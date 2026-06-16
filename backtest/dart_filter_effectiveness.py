@@ -23,7 +23,7 @@ from app.dart.client import corp_code_map, disclosures  # noqa: E402
 from app.dart import filter as DF  # noqa: E402
 
 ENTRIES = "/tmp/mom_entries.csv"
-CACHE = "data/cache/dart_pit_effectiveness.json"
+CACHE = "data/cache/dart_pit_effectiveness_v2.json"   # v2: [rcept_dt, kind, report_nm] — 터미널 판정용
 H = 40                # 보유 거래일(전략 시간청산)
 COST = 0.0035         # 왕복비용
 NMAX = 40             # 최대 룩백(거래일) — 1회 조회로 N20/30/40 파생
@@ -84,7 +84,7 @@ def fetch_disclosures(entries, cal, idx):
                     continue
                 kind = DF.classify(it["report_nm"])
                 if kind:
-                    kept.append([rd, kind])
+                    kept.append([rd, kind, it["report_nm"]])
             cache[key] = kept
         except Exception as e:
             print(f"  ! {tk} {sd} 실패: {str(e)[:60]}", file=sys.stderr); cache[key] = []
@@ -97,12 +97,14 @@ def fetch_disclosures(entries, cal, idx):
 
 
 def label_for_N(cache, cal, idx, ticker, signal_date, N):
-    """신호일−N거래일 이후 공시만으로 라벨. crit > warn > clean."""
+    """신호일−N거래일 이후 공시만으로 (broad, is_terminal). broad: crit>warn>clean."""
     si = idx.get(pd.Timestamp(signal_date))
     bgn = cal[max(0, si - N)].strftime("%Y%m%d") if si is not None else "00000000"
-    items = cache.get(f"{ticker}_{signal_date}", [])
-    kinds = {kind for rd, kind in items if bgn <= rd <= signal_date}
-    return "crit" if "crit" in kinds else ("warn" if "warn" in kinds else "clean")
+    items = [(rd, k, nm) for rd, k, nm in cache.get(f"{ticker}_{signal_date}", []) if bgn <= rd <= signal_date]
+    kinds = {k for rd, k, nm in items}
+    has_term = any(DF.is_terminal(nm) for rd, k, nm in items if k == "crit")
+    broad = "crit" if "crit" in kinds else ("warn" if "warn" in kinds else "clean")
+    return broad, has_term
 
 
 def bucket_stats(df):
@@ -173,13 +175,31 @@ def main():
     # 헤드라인 N=30 crit-only + 강건성 N∈{20,40}
     headline = None
     for N in NS:
-        lab = [label_for_N(cache, cal, idx, r["ticker"], r["signal_date"], N) for _, r in fr.iterrows()]
+        pairs = [label_for_N(cache, cal, idx, r["ticker"], r["signal_date"], N) for _, r in fr.iterrows()]
+        lab = [p[0] for p in pairs]
         buckets, prim = report(f"N={N}거래일 룩백", fr, lab)
         if N == 30:
-            headline = (buckets, prim, lab)
+            term = [p[1] for p in pairs]
+            headline = (buckets, prim, lab, term)
+
+    # ── 터미널 split(사용자 채택 정책): clean / soft-crit(표시만) / TERMINAL(자동제외) ──
+    buckets, prim, lab30, term30 = headline
+    frt = fr.copy()
+    frt["bucket"] = ["terminal" if t else ("softcrit" if b == "crit" else b) for b, t in zip(lab30, term30)]
+    prt = frt[~frt["truncated"]]
+    print(f"\n{'='*64}\n[터미널 정책 N=30 — clean / soft-crit(표시만) / TERMINAL(자동제외)]")
+    for b in ["clean", "warn", "softcrit", "terminal"]:
+        s = bucket_stats(prt[prt["bucket"] == b])
+        if s:
+            print(f"  {b:9} N={s['N']:4} | 중앙 {s['median']:+6.1%} | P(<−20%) {s['p_lt20']:5.1%} "
+                  f"P(<−30%) {s['p_lt30']:5.1%} 전손 {s['p_writeoff']:5.1%} | 최악10% {s['worst_decile']:+6.1%} 승률 {s['win']:4.0%}")
+        else:
+            print(f"  {b:9} N=0")
+    tr = prt[prt["bucket"] == "terminal"]
+    print(f"  → TERMINAL {len(tr)}건이 매수제외 대상. 평균수익 {tr['ret'].mean():+.1%}, 전손 {tr['writeoff'].mean():.0%}, "
+          f"손실(<0) {(tr['ret']<0).mean():.0%}")
 
     # 양분할(신호일 중앙값) — 헤드라인 N=30
-    buckets, prim, lab30 = headline
     fr30 = fr.copy(); fr30["bucket"] = lab30
     _sd = sorted(fr30["signal_date"]); med = _sd[len(_sd) // 2]      # 문자열 중앙값(YYYYMMDD 정렬)
     print(f"\n{'='*64}\n[양분할 N=30 robust] 분할 신호일 중앙값 {med}")
@@ -202,7 +222,7 @@ def main():
     cmap = corp_code_map()
     for _, t in crit_tr.iterrows():
         items = cache.get(f"{t['ticker']}_{t['signal_date']}", [])
-        crits = [rd for rd, k in items if k == "crit"]
+        crits = [rd for rd, k, nm in items if k == "crit"]
         print(f"  {t['ticker']} 신호{t['signal_date']} ret {t['ret']:+.1%}{' 전손' if t['writeoff'] else ''} · crit공시일 {crits[:2]}")
 
     # 결정규칙

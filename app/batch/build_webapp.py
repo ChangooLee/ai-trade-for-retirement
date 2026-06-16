@@ -70,7 +70,7 @@ from app.indicators.pullback import compute_pullback_flags  # noqa: E402
 from app.indicators.tda import compute_tda_signals, tda_buy_sell, HAS_RIPSER  # noqa: E402
 from app.portfolio import ledger  # noqa: E402
 from app.batch.backtest_stats import BACKTEST  # noqa: E402
-from app.dart.filter import annotate_tickers  # noqa: E402
+from app.dart.filter import annotate_tickers, terminal_tickers  # noqa: E402
 
 from app.render.sectors import _sector  # noqa: E402
 from app.data.fetchers import load_krx_auth_key, _load_env_key  # noqa: E402
@@ -260,16 +260,23 @@ def main():
             broad[tk] = ent
         print(f"브로드 분석: {len(broad)}종목(유니버스 밖, 스칼라 신호)", file=sys.stderr)
 
-    # DART 공시 위험 주석 — 후보 종목의 최근 30일 악재 공시(상폐위험/희석) 표시
+    # DART 공시 위험 주석 + ★터미널급(상폐/거래정지/감사의견거절/부도/완전자본잠식) 자동 매수제외★
+    #  근거: 효과검증(dart_filter_effectiveness)서 광의 crit은 과소표본으로 자동제외 게이트 미통과였으나,
+    #  터미널 부분집합은 '보유 불가'가 상식(검증 아닌 first-principle). soft crit·warn은 표시만(annotate).
+    #  ★fail-open: DART 장애 시 제외 0건(매수목록을 비우지 않음).★
+    cand_pool = list(cand.head(28)["ticker"]) if len(cand) else []      # 제외 후 백필로 20개 유지
     dart_targets = list(dict.fromkeys(
-        buy_order + tda_buy + tda_sell + legacy_sell +
+        cand_pool + tda_buy + tda_sell + legacy_sell +
         [r["ticker"] for r in overnight["signals"]] + [r["ticker"] for r in overnight["watch"]]))
     try:
-        dart_flags = annotate_tickers(dart_targets, days=30, asof=asof_str)
-        print(f"DART 공시 주석: 대상 {len(dart_targets)} · 위험 표시 {len(dart_flags)}종목", file=sys.stderr)
+        dart_flags = annotate_tickers(dart_targets, days=45, asof=asof_str)   # 터미널 흔적 ~30거래일 잔존
+        dart_excluded = sorted(terminal_tickers(dart_flags) & set(cand_pool))
+        print(f"DART: 대상 {len(dart_targets)} · 위험 {len(dart_flags)} · 터미널 매수제외 {len(dart_excluded)}{dart_excluded}", file=sys.stderr)
     except Exception as e:
-        print(f"DART 주석 실패(생략): {e}", file=sys.stderr)
-        dart_flags = {}
+        print(f"DART 주석 실패(생략·fail-open): {e}", file=sys.stderr)
+        dart_flags, dart_excluded = {}, []
+    if cand_pool:                                  # 터미널 제외 후 상위 20 (백필 — 비터미널 후보가 슬롯 채움)
+        buy_order = [tk for tk in cand_pool if tk not in set(dart_excluded)][:20]
 
     payload = {
         "meta": {"asof": str(asof.date()), "next_day": str(nxt.date()),
@@ -298,6 +305,7 @@ def main():
                      "exit_full_pct": float(tcfg.get("exit_full_pct", 0.85)),
                      "exit_trim_frac": float(tcfg.get("exit_trim_frac", 0.5))},
         "all_stocks": fetch_all_stocks(auth, asof_str), "broad": broad, "overnight": overnight, "dart": dart_flags,
+        "dart_excluded": dart_excluded,
     }
     tpl = open(TEMPLATE, encoding="utf-8").read()
     html = tpl.replace("__DATA__", json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
@@ -329,6 +337,7 @@ def main():
                           for tk in buy_order if tk in stocks and stocks[tk].get("close")],
             "sell_tickers": sorted(set(legacy_sell)),     # 청산 = 시간40일 + 20주선 이탈만(TDA 청산 미사용 — 자문 전용)
             "prices": prices, "calendar": cal,
+            "dart_excluded": dart_excluded,               # 터미널 공시로 매수 제외된 종목(buy_order엔 이미 빠짐, 감사용)
         }
         _repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         _sp = os.path.join(_repo, "state", "daily_signals.json")

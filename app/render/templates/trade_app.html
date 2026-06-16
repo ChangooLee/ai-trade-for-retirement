@@ -633,8 +633,16 @@ function tdaAction(t){
   const m=DATA.tda_meta||{}, trim=m.exit_trim_pct||0.75;
   return t.risk_pct < trim ? "hold" : "caution";
 }
+function dartExcludedBlock(){
+  const ex=DATA.dart_excluded||[]; if(!ex.length) return "";
+  const rows=ex.map(tk=>{ const s=DATA.stocks[tk]||{}; const d=(DATA.dart||{})[tk]||{};
+    const lbl=(d.terminal&&d.terminal[0])||(d.crit&&d.crit[0])||"터미널 공시";
+    return `<div class="srow" style="gap:6px"><b class="neg">${esc(s.name||tk)}</b> <span class="mono sub">${tk}</span> <span class="sub">${esc(lbl)}</span></div>`;}).join("");
+  return `<div class="warn" style="border-left-color:#f0584c;background:#241417"><b class="neg">공시로 매수 제외 ${ex.length}종목</b> — 상장폐지·거래정지·감사의견거절·부도·완전자본잠식 등 <b>보유 불가</b>급 공시(백테스트: 이 부류 진입 중앙 −16.6%·전손 11%). 매수 후보에서 자동 제외했습니다(소프트 악재·희석 공시는 카드에 경고만 표시).${rows}</div>`;
+}
 function dartBadge(tk){ const d=(DATA.dart||{})[tk]; if(!d) return "";
-  if(d.crit&&d.crit.length) return `<div class="srow"><b class="neg">위험공시 — 매수 금지 권고: ${esc(d.crit[0])}${d.crit.length>1?' 외 '+(d.crit.length-1)+'건':''}</b></div>`;
+  if(d.terminal&&d.terminal.length) return `<div class="srow"><b class="neg">터미널 공시 — 보유 불가급(상폐/정지/감사거절): ${esc(d.terminal[0])}${d.terminal.length>1?' 외 '+(d.terminal.length-1)+'건':''}</b></div>`;
+  if(d.crit&&d.crit.length) return `<div class="srow"><b style="color:#e0a93b">악재 공시 주의(자동제외 아님 — 검증상 영향 불명): ${esc(d.crit[0])}${d.crit.length>1?' 외 '+(d.crit.length-1)+'건':''}</b></div>`;
   if(d.warn&&d.warn.length) return `<div class="srow"><b style="color:#e0a93b">공시 주의(희석·수급): ${esc(d.warn[0])}${d.warn.length>1?' 외 '+(d.warn.length-1)+'건':''}</b></div>`;
   return ""; }
 
@@ -894,7 +902,7 @@ function render(){
   const held=new Set(pf.open.map(h=>h.ticker));
   const cbStop = cb.tripped ? `<div class="warn" style="border-left-color:#f0584c">월 손실 한도 −${(CB_LIMIT*100).toFixed(0)}% 도달 — <b>당월 신규 매수 중단</b>. 아래는 참고용이며 집행하지 마세요.</div>` : "";
   const lb=DATA.buy_order.filter(tk=>!held.has(tk));
-  document.getElementById("legacyBuy").innerHTML = cbStop + (lb.length ? lb.map(tk=>legacyBuyCard(tk,pw,pf.total)).join("") : legacyEmpty(m));
+  document.getElementById("legacyBuy").innerHTML = cbStop + dartExcludedBlock() + (lb.length ? lb.map(tk=>legacyBuyCard(tk,pw,pf.total)).join("") : legacyEmpty(m));
   const ls=(DATA.legacy_sell||[]).filter(tk=>DATA.stocks[tk]);
   document.getElementById("legacySell").innerHTML = ls.length ? ls.map(legacySellCard).join("") : '<div class="empty">20주선 하향 이탈 종목 없음.</div>';
   const tb=(DATA.tda_buy||[]).filter(tk=>!held.has(tk)&&DATA.stocks[tk]);

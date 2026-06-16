@@ -66,3 +66,25 @@ def test_crit_tickers_helper():
              "000002": {"crit": [], "warn": ["..."]},
              "000003": {"crit": [], "warn": []}}
     assert F.crit_tickers(flags) == {"000001"}
+
+
+# ── 터미널급(자동 제외) vs 소프트 crit(표시만) ──
+def test_terminal_subset():
+    for nm in ["상장폐지결정", "상장적격성실질심사대상결정", "주권매매거래정지(상장적격성)",
+               "감사의견거절", "사채원리금미지급발생", "회생절차개시신청", "완전자본잠식"]:
+        assert F.is_terminal(nm), f"터미널 미검출: {nm}"
+    # 소프트 crit — 표시(crit)는 되나 터미널 아님(자동 제외 안 함)
+    for nm in ["횡령·배임혐의발생", "불성실공시법인지정", "관리종목지정(자본잠식률50%이상)"]:
+        assert F.classify(nm) == "crit" and not F.is_terminal(nm), f"소프트 crit 오판: {nm}"
+    # 출자법인 회생/파산 = 자기 상폐 아님 → 터미널 제외
+    assert not F.is_terminal("출자법인회생절차및파산관련결정")
+    # 회복/호재는 애초에 crit 아님
+    assert not F.is_terminal("주권매매거래정지해제")
+
+
+def test_terminal_tickers_helper():
+    flags = {"A": {"crit": ["x"], "warn": [], "terminal": ["x"]},
+             "B": {"crit": ["y"], "warn": [], "terminal": []},   # 소프트 crit
+             "C": {"crit": [], "warn": ["z"], "terminal": []}}
+    assert F.terminal_tickers(flags) == {"A"}
+    assert F.crit_tickers(flags) == {"A", "B"}
