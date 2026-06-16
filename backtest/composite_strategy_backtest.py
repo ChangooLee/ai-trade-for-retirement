@@ -185,7 +185,20 @@ def main():
         eq = cap0 * (1 + comb).cumprod()
         cagr, dd, shp, _ = metrics(eq, cap0)
         print(f"  {name:<28s}{cagr*100:+7.1f}%{dd*100:+7.1f}%{shp:8.2f}")
+    # ── 정직 벤치마크: KOSPI/KOSDAQ 매수후보유(동일 기간) ──
+    sd, ed = cal[start_i], cal[-1]
+    print(f"  {'─'*52}")
+    for mk in ("KOSPI", "KOSDAQ"):
+        s = index[index["market"] == mk].sort_values("date")
+        s = s[(s["date"] >= sd) & (s["date"] <= ed)]
+        if len(s) > 2:
+            tot = s["close"].iloc[-1] / s["close"].iloc[0] - 1
+            yrs = (s["date"].iloc[-1] - s["date"].iloc[0]).days / 365.25
+            bhc = (1 + tot) ** (1 / yrs) - 1
+            mdd = (s["close"] / s["close"].cummax() - 1).min()
+            print(f"  [벤치] {mk} 매수후보유{'':14s}{bhc*100:+7.1f}%{mdd*100:+7.1f}%{'':8s}(총 {tot*100:+.0f}%)")
     print("  ※ 상관이 낮을수록 복합의 MDD 완화 효과 큼. 단타는 분단위 슬리피지 미반영(상한).")
+    print("  ※ Sharpe는 일수익 기준(sqrt252). 벤치는 주봉이라 CAGR/MDD만 표기.")
     import os
     os.makedirs("state", exist_ok=True)
     pd.DataFrame({"long": rl, "overnight": rs}).to_csv("state/sleeve_returns.csv")
