@@ -15,6 +15,7 @@ from app.portfolio.sizing import compute_target_slots, compute_weight_per_stock 
 
 DAYS_PATH = os.path.join(_REPO, "state", "bt_days.json")
 PRICES_PATH = os.path.join(_REPO, "state", "bt_prices.parquet")
+LEV_CAP = 2.0      # 레버리지 상한(신용 2배). run_sims와 일치.
 
 
 def run(start, end, capital, exposure_mult, cb_limit, cb_mode="block"):
@@ -30,17 +31,22 @@ def run(start, end, capital, exposure_mult, cb_limit, cb_mode="block"):
     if not days:
         return {"error": "해당 기간에 데이터가 없습니다."}
     st = engine.new_state(capital, cb_limit=cb_limit, cb_mode=cb_mode)
-    eq_curve = []; trips = 0; all_trades = []
+    eq_curve = []; trips = 0; all_trades = []; margin_calls = 0; peak_lev = 0.0; tot_interest = 0.0
     for d in days:
         rec = arch["days"][d]; pr = prices_by_date.get(d, {})
-        m = min(1.0, rec["m"] * exposure_mult)
+        m = min(LEV_CAP, rec["m"] * exposure_mult)        # 캡=신용 2배. m>1이면 엔진이 차입(마진이자·마진콜)으로 집행
         slots = compute_target_slots(m, maxpos, baseslot); weight = compute_weight_per_stock(m, slots)
         buy = [{"ticker": tk, "name": names.get(tk, tk), "close": pr[tk]} for tk in rec["buy"] if tk in pr and pr[tk] > 0]
-        sig = {"hold_days": hold_days, "cost": cost, "exposure": {"slots": int(slots), "weight": weight},
+        sig = {"hold_days": hold_days, "cost": cost,
+               "exposure": {"slots": int(slots), "weight": weight, "max_lev": round(m, 4)},
                "buy_order": buy, "sell_tickers": rec["sells"], "prices": pr, "calendar": calendar}
         st, res = engine.execute_day(st, d, sig)
         if res["tripped"]:
             trips += 1
+        if res.get("margin_called"):
+            margin_calls += 1
+        peak_lev = max(peak_lev, res.get("leverage", 0) or 0)
+        tot_interest += res.get("margin_interest", 0) or 0
         all_trades.extend(res["trades"])
         eq_curve.append({"date": d, "equity": res["equity"]})
     eqs = pd.Series([e["equity"] for e in eq_curve])
@@ -54,7 +60,9 @@ def run(start, end, capital, exposure_mult, cb_limit, cb_mode="block"):
                     "final_equity": round(final), "total_pnl": round(final - capital),
                     "total_ret": final / capital - 1, "mdd": mdd, "trips": trips,
                     "n_trades": len(all_trades), "win_rate": (wins / len(all_trades)) if all_trades else 0.0,
-                    "realized_pnl": round(realized), "n_open": len(open_pos), "cash": round(st["cash"])},
+                    "realized_pnl": round(realized), "n_open": len(open_pos), "cash": round(st["cash"]),
+                    "margin_calls": margin_calls, "peak_leverage": round(peak_lev, 2),
+                    "margin_interest": round(tot_interest)},
         "trades": sorted(all_trades, key=lambda t: t["exit_date"], reverse=True)[:200],
         "equity_curve": eq_curve,
     }

@@ -19,6 +19,8 @@ from __future__ import annotations
 import math
 
 CB_LIMIT = 0.03
+MAINT_MARGIN = 0.30      # 유지증거금: 자기자본/보유평가액 < 이 값 → 마진콜(강제청산)
+MARGIN_RATE = 0.07       # 신용융자 연이자(차입잔액 일할 부과)
 
 
 def _trading_days_between(cal, d1, d2):
@@ -45,6 +47,13 @@ def execute_day(state, day, sig):
     cash = float(state["cash"])
     positions = [dict(p) for p in state.get("positions", [])]
     cost = float(sig.get("cost", 0.0035))
+    max_lev = float(sig.get("exposure", {}).get("max_lev", 1.0))    # 그날 목표노출(=매수여력 배수). ≤1이면 무차입(기존동작)
+    mrate = float(sig.get("margin_rate", MARGIN_RATE))
+    maint = float(sig.get("maint_margin", MAINT_MARGIN))
+    margin_interest = 0.0
+    if cash < 0 and mrate > 0:                       # 전일 차입잔액에 하루치 이자
+        margin_interest = -cash * (mrate / 252.0)
+        cash -= margin_interest
     cal = sig.get("calendar", [])
     hold_days = int(sig.get("hold_days", 40))
     sells_set = set(sig.get("sell_tickers", []))     # 추세이탈(20주선) — 전량청산
@@ -105,7 +114,19 @@ def execute_day(state, day, sig):
     # 매수 차단: block/liq=발동 동안 차단 / liqsoft=청산한 그날만 차단(이후 정상 재진입) / none=차단 없음
     blocked = tripped if cb_mode in ("block", "liq") else (just_liq if cb_mode == "liqsoft" else False)
 
-    # 3) 매수 (미차단 & 슬롯 여유)
+    # 2.5) 마진콜 — 차입(현금<0) 중 자기자본/보유평가 < 유지증거금이면 전량 강제청산
+    margin_called = False
+    eq_mc, hv_mc = _equity(cash, positions, sig)
+    if cash < 0 and hv_mc > 0 and eq_mc < maint * hv_mc:
+        for p in list(positions):
+            px = _price(sig, p["ticker"], p.get("last_price") or p["entry_price"])
+            held = _trading_days_between(cal, p["entry_date"], day)
+            cash += _record_sell(p, p["shares"], px, held, "마진콜")
+        positions = []; margin_called = True; blocked = True
+
+    # 3) 매수 (미차단 & 슬롯 여유). 차입한도 = (max_lev−1)×자기자본까지 현금 마이너스 허용
+    eq_now, _ = _equity(cash, positions, sig)
+    borrow_floor = -max(0.0, max_lev - 1.0) * eq_now      # max_lev≤1 → 0 → 기존 무차입 동작과 동일
     slots = int(sig.get("exposure", {}).get("slots", 0))
     weight = float(sig.get("exposure", {}).get("weight", 0.0))
     if not blocked and slots > len(positions) and weight > 0:
@@ -121,7 +142,7 @@ def execute_day(state, day, sig):
                 continue
             sh = math.floor(weight * eq_now / px)
             spend = sh * px * (1 + cost / 2)
-            if sh > 0 and cash >= spend:
+            if sh > 0 and (cash - spend) >= borrow_floor - 1e-6:
                 cash -= spend
                 positions.append({"ticker": tk, "name": c.get("name", tk), "entry_date": day,
                                   "entry_price": px, "shares": sh, "last_price": px})
@@ -132,8 +153,11 @@ def execute_day(state, day, sig):
     new_state = {"investment": inv, "cash": round(cash, 2), "positions": positions,
                  "cb_month": cb_month, "cb_base_pnl": cb_base, "cb_limit": cb_limit, "cb_mode": cb_mode,
                  "cb_liq_month": cb_liq_month}
+    borrowed = max(0.0, -cash)
     result = {"date": day, "equity": round(equity), "cash": round(cash), "holdings_value": round(hv),
-              "trades": trades, "tripped": tripped, "n_positions": len(positions)}
+              "trades": trades, "tripped": tripped, "n_positions": len(positions),
+              "borrowed": round(borrowed), "leverage": round(hv / equity, 3) if equity > 0 else 0,
+              "margin_interest": round(margin_interest), "margin_called": margin_called}
     return new_state, result
 
 

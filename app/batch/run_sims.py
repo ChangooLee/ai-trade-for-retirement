@@ -14,6 +14,7 @@ from app.sim import db, engine  # noqa: E402
 
 _REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SIG_PATH = os.path.join(_REPO, "state", "daily_signals.json")
+LEV_CAP = 2.0      # 시뮬 레버리지 상한(신용융자 2배). exposure_mult로 사용자가 1.0~이 값 사이 설정.
 
 
 def main():
@@ -47,11 +48,12 @@ def main():
             skipped += 1; continue
         try:
             state = db.state_from_row(s)
-            # 사용자별 노출배수(공격성)로 슬롯/비중 재계산 (캡 100%)
+            # 사용자별 노출배수(공격성/레버리지)로 슬롯·비중 재계산. 캡=LEV_CAP(2.0=신용 2배).
+            # m2>1.0이면 D4목표×배수가 100% 초과 → 엔진이 차입(마진이자·마진콜)으로 집행. 레버리지는 리스크온에서만 발동.
             mult = float(s["exposure_mult"]) if s["exposure_mult"] is not None else 1.0
-            m2 = min(1.0, target * mult)
+            m2 = min(LEV_CAP, target * mult)
             slots = compute_target_slots(m2, maxpos, baseslot); weight = compute_weight_per_stock(m2, slots)
-            usig = dict(sig); usig["exposure"] = {"slots": int(slots), "weight": weight}
+            usig = dict(sig); usig["exposure"] = {"slots": int(slots), "weight": weight, "max_lev": round(m2, 4)}
             ns, r = engine.execute_day(state, asof, usig)   # cb_limit는 state에서 적용
             db.save_step(s["sub"], ns, r)
             done += 1
