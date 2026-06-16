@@ -124,6 +124,32 @@ def get_minute_bars(ticker, date, market="J"):
     return [bars[t] for t in sorted(bars)]
 
 
+def get_investor_flow(ticker, market="J"):
+    """종목별 투자자 순매수 EOD 30일 트레일링(FHKST01010900). 외국인/기관/개인 순매수 거래대금(원)+종가.
+    빈값(당일 미확정) 행은 제외. 시간오름차순 list[dict]."""
+    key, sec = _load_env(); tok = get_token()
+    r = requests.get(f"{BASE}/uapi/domestic-stock/v1/quotations/inquire-investor",
+                     headers={"authorization": f"Bearer {tok}", "appkey": key, "appsecret": sec,
+                              "tr_id": "FHKST01010900", "custtype": "P"},
+                     params={"FID_COND_MRKT_DIV_CODE": market, "FID_INPUT_ISCD": ticker}, timeout=15)
+    if r.status_code != 200:
+        raise RuntimeError(f"수급 조회 실패 {r.status_code}: {r.text[:160]}")
+
+    def _f(b, k):
+        v = str(b.get(k, "")).strip().replace(",", "")
+        try:
+            return float(v) if v not in ("", "-") else None
+        except ValueError:
+            return None
+    out = []
+    for b in (r.json().get("output") or []):
+        d = b.get("stck_bsop_date"); fr = _f(b, "frgn_ntby_tr_pbmn")
+        if d and fr is not None:                      # 빈(당일 미확정) 행 제외
+            out.append({"date": d, "close": _f(b, "stck_clpr"), "frgn_ntby": fr,
+                        "orgn_ntby": _f(b, "orgn_ntby_tr_pbmn"), "prsn_ntby": _f(b, "prsn_ntby_tr_pbmn")})
+    return list(reversed(out))                         # 오래된→최신
+
+
 if __name__ == "__main__":   # 검증: 삼성전자 현재가 (시크릿 미출력)
     import sys
     tks = sys.argv[1:] or ["005930"]
