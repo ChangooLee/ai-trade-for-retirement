@@ -24,6 +24,10 @@ LOG="$ROOT/logs/batch_$(date +%Y%m%d).log"
   "$PY" -m app.batch.build_bt_archive
   echo "-- 6) 단타 백테스트 아카이브 증분 갱신(state/overnight_days.json)"
   "$PY" -m app.batch.build_overnight_archive
+  echo "-- 7) KIS 분봉 증분 적재(최근 3일, 거래대금 상위44+보유) — 1년보관이라 매일 축적 필수"
+  "$PY" -m app.batch.build_minute --days 3 --top 44 || echo "  (분봉 적재 실패 — 무시하고 계속)"
+  echo "-- 8) KIS 수급 증분 적재(외인/기관/개인 순매수, 상위400) — 30일 트레일링이라 매일 축적 필수"
+  "$PY" -m app.batch.build_flow --top 400 || echo "  (수급 적재 실패 — 무시하고 계속)"
   echo "==== $(date '+%F %T') 종료 (rc=$rc) ===="
 } >> "$LOG" 2>&1
 # 로그 30일 보관
