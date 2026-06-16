@@ -209,7 +209,7 @@ details{margin-top:6px}summary{cursor:pointer;color:var(--ink2);font-size:12.5px
   <div><label>투자금액(원)</label><input id="btCap" type="number" value="10000000" style="width:140px"></div>
   <div><label>전략</label><select id="btStrategy" onchange="btToggleStrategy()"><option value="swing">스윙(현행)</option><option value="overnight">단타(오버나이트)</option></select></div>
   <span id="swingParams" style="display:contents">
-  <div><label>노출(공격성)</label><select id="btMult"><option value="1.0">기본 ×1.0</option><option value="1.5">적극 ×1.5</option><option value="2.0">공격 ×2.0</option><option value="2.5">최대 ×2.5</option></select></div>
+  <div><label>노출/레버리지</label><select id="btMult"><option value="1.0">기본 ×1.0 (무레버)</option><option value="1.5">신용 ×1.5</option><option value="2.0">신용 ×2.0 (최대)</option></select></div>
   <div><label>월 손실한도</label><select id="btCb"><option value="0.03">−3%</option><option value="0.05">−5%</option><option value="0.08">−8%</option><option value="0">끔</option></select></div>
   <div><label>한도 도달 시</label><select id="btMode"><option value="block">신규매수 중단</option><option value="liq">전량청산</option></select></div></span>
   <span id="onParams" style="display:none">
@@ -524,6 +524,7 @@ window.runBacktest=async ()=>{
         <div>최종 평가자산<b>${W(s.final_equity)}</b></div><div>총손익<b class="${cls}">${W(s.total_pnl)} (${P(s.total_ret)})</b></div>
         <div>MDD<b class="neg">${P(s.mdd)}</b></div><div>체결<b>${s.n_trades}건 · 승률 ${Math.round(s.win_rate*100)}%</b></div>
         <div>설정<b>${setLine}</b></div></div>
+      ${(s.peak_leverage>1.05||s.margin_calls>0)?`<div class="warn" style="border-left-color:#e0a93b;margin-top:6px"><b>레버리지 사용</b> — 최대 ${s.peak_leverage}x · 마진이자 ${W(s.margin_interest)} · <b class="${s.margin_calls>0?'neg':''}">마진콜 ${s.margin_calls}회</b>. ★레버리지는 백테스트상 수익은 비슷·낮고 MDD만 ~2배(위험조정 열위) — 무레버 ×1.0과 비교해 보세요.★</div>`:''}
       <canvas id="btChart" style="width:100%;height:130px;margin-top:8px"></canvas>
       ${s.n_trades?`<div style="margin-top:8px"><b class="sub">체결 내역${s.n_trades>200?' (최근 200건)':''}</b>`+tbl+`</div>`:'<div class="sub" style="margin-top:6px">체결 없음(기간이 짧거나 신호 없음).</div>'}
       ${ov?'<div class="sub" style="margin-top:6px">단타는 얇은 엣지(중앙값은 비용 미달)이며 100% 운용 시 낙폭이 큽니다 — 총자산 30% 이하 권장. 생존편향 유니버스라 절대수치는 낙관적.</div>':''}</div>`;
@@ -541,11 +542,11 @@ window.simStartForm=function(prefill, otherAcct){
   el.innerHTML=`<div class="card">${otherNote}<div class="hd"><b>시뮬레이션 ${d?'설정 변경·재시작':'시작'} · 공격성 설정</b>${d?' <span class="sub">시작 시 기존 시뮬 기록 초기화</span>':''}</div>
     <div class="srow" style="gap:10px;align-items:center;flex-wrap:wrap">
       <label>투자금액(원)</label><input id="simInv" type="number" value="${Math.round(inv)}" style="width:140px">
-      <label>노출(공격성)</label><select id="simMult">${opt(1.0,mult,"기본 ×1.0 (노출 40%대)")}${opt(1.5,mult,"적극 ×1.5")}${opt(2.0,mult,"공격 ×2.0 (≈풀투자)")}${opt(2.5,mult,"최대 ×2.5")}</select>
+      <label>노출/레버리지</label><select id="simMult">${opt(1.0,mult,"기본 ×1.0 (무레버)")}${opt(1.5,mult,"신용 ×1.5")}${opt(2.0,mult,"신용 ×2.0 (최대)")}</select>
       <label>월 손실한도</label><select id="simCb">${opt(0.03,cb,"−3% (권장)")}${opt(0.05,cb,"−5%")}${opt(0.08,cb,"−8%")}${opt(0,cb,"끔")}</select>
       <label>한도 도달 시</label><select id="simMode">${sopt("block",mode,"신규매수 중단 (기본)")}${sopt("liq",mode,"전량청산")}</select>
       <button class="btn" style="background:#f6f7f8;border-color:#5b94f0" onclick="simStart()">시작</button>${d?' <a href="#" class="sub" style="color:#8b8f97" onclick="renderSim();return false">취소</a>':''}</div>
-    <div class="sub" style="margin-top:6px">노출↑일수록 수익·낙폭 모두 커집니다. 월 손실한도 도달 시 <b>신규매수 중단</b>(보유 유지) vs <b>전량청산</b>(다 팔고 그달 쉼). 엔진 백테스트상 대체로 <b>신규중단이 수익이 높고 MDD는 비슷</b>했고, 급반등 직후(2023 등)엔 전량청산이 낙폭을 줄였습니다. <b>백테스트 탭에서 직접 비교</b>해 보세요(과거치·미래 보장 아님). 기본=신규중단.</div></div>`;
+    <div class="sub" style="margin-top:6px"><b>×1.0 초과 = 신용융자(레버리지)</b> — D4 노출이 100%를 넘는 리스크온에서만 차입 발동(연 7% 이자·유지증거금 30% 마진콜). ★엔진 백테스트(2017~2026): 레버리지는 <b>수익은 비슷하거나 낮고 MDD만 ~2배</b>(2x MDD −56% vs 1x −31%) — 위험조정 열위. 모멘텀 수익이 이자를 살짝 넘는 수준이라 변동성세가 이득을 상쇄.★ 손실한도: <b>신규중단</b>(보유 유지)이 <b>전량청산</b>보다 수익↑·MDD 비슷(양분할 검증). 기본=무레버·−3%·신규중단. <b>백테스트 탭에서 직접 비교</b>(과거치·미래 보장 아님).</div></div>`;
 };
 window.simStart=async ()=>{
   const inv=+(document.getElementById("simInv").value||0);

@@ -93,7 +93,8 @@ def execute_day(state, day, sig):
     eq_now, _ = _equity(cash, positions, sig)
     cur_pnl = eq_now - inv
     cb_limit = float(state.get("cb_limit", CB_LIMIT))      # 사용자 조정 가능(공격성). 0 또는 None이면 끔.
-    cb_mode = state.get("cb_mode", "block")                # 워크포워드 검증: liq(전량청산)가 block보다 견고히 우위
+    cb_mode = state.get("cb_mode", "block")                # 기본 block. ★양분할 검증(2026-06): −3% liq는 수익 최악·MDD 이점無
+    #   (전·후반 모두 block≫liq); liq 쓰려면 −5% 권장(두 반기 MDD 최저). 과거 'liq 우위' 주석은 기각.★
     cb_month = state.get("cb_month")
     cb_base = state.get("cb_base_pnl", 0.0)
     mon = day[:7]
