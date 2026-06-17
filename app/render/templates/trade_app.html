@@ -42,7 +42,7 @@ h2{font-size:15px;margin:22px 0 9px;font-weight:700;letter-spacing:-.2px;color:v
 canvas{width:100%;height:150px;display:block;background:var(--panel);border:1px solid var(--line);border-radius:8px;margin:6px 0}
 .cl{font-size:10.5px;color:var(--mut);margin:2px 0}.cl b{margin:0 2px}
 .plan{display:grid;grid-template-columns:1fr 1fr;gap:5px 16px;margin:8px 0;font-size:12.5px;background:var(--panel);border-radius:8px;padding:10px 12px}
-.plan b{font-size:13px;color:var(--ink)}.sub{color:var(--mut);font-size:10.5px}.pos{color:var(--up)}.neg{color:var(--down)}
+.plan b{font-size:13px;color:var(--ink)}.sub{color:var(--mut);font-size:10.5px}.pos{color:var(--up)!important}.neg{color:var(--down)!important}
 .form{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
 .form label{font-size:11px;color:var(--mut);display:block;margin-bottom:4px;font-weight:500}
 .form input,.form select,select,input[type=date],input[type=number]{background:var(--card);border:1px solid var(--line2);color:var(--ink);border-radius:8px;padding:8px 11px;font-size:13px;font-family:inherit}
@@ -290,6 +290,8 @@ async function setSession(token){
   idToken=token; const p=jwtPayload(token); gUser={name:p.name, email:p.email, exp:p.exp, sub:String(p.sub||"")};
   try{ localStorage.setItem(LSTOK, token); }catch(e){}
   renderAuth(); await reconcile(); renderSim();
+  // 로그인 직후 보유 탭이면 라이브(틱·시세·DART)를 바로 로드 — 탭 전환 없이도 뜨게
+  try{ const pp=document.getElementById("panel-portfolio"); if(pp&&pp.classList.contains("active")){ startSSE(); refreshQuotes(); loadDart(); } }catch(e){}
 }
 window.onGoogleCredential = async (resp)=>{ await setSession(resp.credential); };
 
@@ -669,9 +671,10 @@ function dartBlock(tk){
   if(p.recent&&p.recent.length){
     const rows=p.recent.map(it=>{ const col=it.kind==="terminal"||it.kind==="crit"?"var(--up)":it.kind==="warn"?"#e0a93b":"var(--mut)";
       return `<div style="font-size:10.5px;color:${col}">${_dmd(it.date)} ${esc(it.title)}</div>`; }).join("");
-    parts.push(`<details style="margin-top:4px"><summary class="sub">최근 공시 ${p.recent.length}건 (DART)</summary><div style="margin-top:3px">${rows}</div></details>`);
+    parts.push(`<details open style="margin-top:4px"><summary class="sub">최근 공시 ${p.recent.length}건 (DART)</summary><div style="margin-top:3px">${rows}</div></details>`);
   }
-  return parts.length?`<div style="border-top:1px solid var(--line);margin-top:6px;padding-top:6px"><span class="sub" style="color:var(--ink2)">📋 공시·재무 (DART)</span>${parts.join("")}</div>`:"";
+  // onclick stopPropagation: DART 섹션 클릭이 카드의 매수/매도 팝업을 띄우지 않게
+  return parts.length?`<div onclick="event.stopPropagation()" style="border-top:1px solid var(--line);margin-top:6px;padding-top:6px;cursor:default"><span class="sub" style="color:var(--ink2)">📋 공시·재무 (DART)</span>${parts.join("")}</div>`:"";
 }
 const ALL = DATA.all_stocks || {};   // 코드 -> [이름, 종가, 시장] (전 상장종목)
 const BROAD = DATA.broad || {};      // 유니버스 밖 + 분석(지표·TDA 스칼라, 차트 없음)
