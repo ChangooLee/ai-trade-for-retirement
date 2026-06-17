@@ -657,7 +657,7 @@ async function loadDart(){
 }
 function _dmd(d){ const s=(d||"").replace(/[^0-9]/g,""); return s.length>=8?s.slice(4,6)+"-"+s.slice(6,8):(d||""); }
 function dartBlock(tk){
-  const p=(dartProfiles||{})[tk]; if(!p||p.error) return "";
+  const p=(dartProfiles||{})[tk]||((DATA.dart_profiles||{})[tk]); if(!p||p.error) return "";
   const parts=[];
   if(p.distress&&p.distress.level){ const c=p.distress.level==="crit"?"neg":"";
     parts.push(`<div class="srow"><b class="${c}">재무 ${p.distress.level==="crit"?"위험":"주의"}: ${esc((p.distress.flags||[]).join(", "))}</b> <span class="sub">부채비율 ${p.distress.debt_ratio??'-'}% · 유동비율 ${p.distress.curr_ratio??'-'}% <span class="tip">검증상 자동제외 아님(참고)❓</span></span></div>`); }
@@ -815,7 +815,7 @@ function legacyBuyCard(tk,pw,total){
     ${miniChart(tk)}${dartBadge(tk)}
     <div class="srow"><span>RS <b>${Math.round(s.rs)}</b></span><span>52주고점 <b>${Math.round(s.high52*100)}%</b></span><span>20주선 <b>${P(s.dist_wma20,0)}</b></span></div>
     <div class="srow"><span>매수가 <b>${W(s.close)}</b></span><span>추천 <b>${sh.toLocaleString()}주</b> ≈${W(amt)}</span></div>
-    <div class="srow"><span>목표 <b class="pos">${hi?W(hi):'—'}</b></span><span>손절 <b class="neg">${W(s.swing20)}</b></span><span>청산 <b>+40일</b></span></div></div>`;
+    <div class="srow"><span>목표 <b class="pos">${hi?W(hi):'—'}</b></span><span>손절 <b class="neg">${W(s.swing20)}</b></span><span>청산 <b>+40일</b></span></div>${dartBlock(tk)}</div>`;
 }
 // 모멘텀·추세 방식 이탈 카드 (20주선 하향)
 function legacySellCard(tk){
@@ -835,7 +835,7 @@ function tdaBuyCard(tk,pw,total){
     <div class="srow"><span>위상리스크 <b>${t.risk>=0?'+':''}${t.risk}</b> (안전 상위 ${safe}%)</span><span>추세 <b class="${t.dir>=0?'pos':'neg'}">${t.dir>=0?'+':''}${t.dir}</b></span></div>
     <div class="srow"><span>종합 <b>${t.score>=0?'+':''}${t.score}</b></span><span>풍경노름 <b>${t.pl_norm}</b></span><span>엔트로피 <b>${t.entropy}</b></span></div>
     <div class="srow"><span>매수가 <b>${W(s.close)}</b></span><span>추천 <b>${sh.toLocaleString()}주</b> ≈${W(amt)}</span></div>
-    <div class="tdabar"><i style="width:${Math.max(6,safe)}%;background:#34c77b"></i></div></div>`;
+    <div class="tdabar"><i style="width:${Math.max(6,safe)}%;background:#34c77b"></i></div>${dartBlock(tk)}</div>`;
 }
 // TDA 매도/위험 카드 (위상 불안정 · 전조)
 function tdaSellCard(tk){
@@ -928,8 +928,8 @@ function render(){
           <div>매입액 <b>${W(h.cost)}</b> <span class="sub">${W(h.entry_price)}×${h.shares}주</span></div>
           <div>평가금액 <b>${W(h.value)}</b> <span class="sub">현재가×수량</span></div>
           <div>평가손익 <b class="${h.ret>=0?'pos':'neg'}">${W(h.value-h.cost)} (${P(h.ret)})</b></div>
-          <div>현재가 <b>${W(h.cur)}</b>${LIVE[h.ticker]!=null?' <span class="sub" style="color:var(--up)">●실시간</span>':''} <span class="sub">/ 진입 ${W(h.entry_price)}</span></div></div>
-        <div class="meta" style="color:#e0a93b">유니버스(상위 ${DATA.meta.universe_count}종목) 밖 — 가격·손익만 추적(차트·목표/손절·TDA 신호 미제공)</div></div>`);
+          <div>현재가 <b class="${h.cur>=h.entry_price?'pos':'neg'}">${W(h.cur)}</b>${LIVE[h.ticker]!=null?' <span class="sub" style="color:var(--up)">●실시간</span>':''} <span class="sub">/ 진입 ${W(h.entry_price)}</span></div></div>
+        <div class="meta" style="color:#e0a93b">유니버스(상위 ${DATA.meta.universe_count}종목) 밖 — 가격·손익만 추적(차트·목표/손절·TDA 신호 미제공)</div>${dartBlock(h.ticker)||(idToken?'':'<div class="meta sub">로그인하면 이 종목의 공시·재무(DART)가 표시됩니다.</div>')}</div>`);
       return;
     }
     const isSell = h.status==="매도예정";
@@ -953,7 +953,7 @@ function render(){
         <div>매입액 <b>${W(h.cost)}</b> <span class="sub">${W(h.entry_price)}×${h.shares}주</span></div>
         <div>평가금액 <b>${W(h.value)}</b> <span class="sub">현재가×수량</span></div>
         <div>평가손익 <b class="${h.ret>=0?'pos':'neg'}">${W(h.value-h.cost)} (${P(h.ret)})</b></div>
-        <div>현재가 <b>${W(h.cur)}</b>${LIVE[h.ticker]!=null?' <span class="sub" style="color:var(--up)">●실시간</span>':''} <span class="sub">/ 진입 ${W(h.entry_price)}</span></div>
+        <div>현재가 <b class="${h.cur>=h.entry_price?'pos':'neg'}">${W(h.cur)}</b>${LIVE[h.ticker]!=null?' <span class="sub" style="color:var(--up)">●실시간</span>':''} <span class="sub">/ 진입 ${W(h.entry_price)}</span></div>
         <div>청산예정 <b>${h.planned}</b> <span class="sub">(8주·D-${h.rem})</span></div>
         ${tdaLine}${levelRows(h.ticker,h.cur)}</div>${dartBlock(h.ticker)}</div>`;
     if(isSell) sc.push(card); else hc.push(card);

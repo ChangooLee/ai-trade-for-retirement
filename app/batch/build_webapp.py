@@ -278,6 +278,19 @@ def main():
     if cand_pool:                                  # 터미널 제외 후 상위 20 (백필 — 비터미널 후보가 슬롯 채움)
         buy_order = [tk for tk in cand_pool if tk not in set(dart_excluded)][:20]
 
+    # 추천 후보 종목별 DART 종합 프로파일(화면 풍부정보·비로그인 표시) — buy/tda 후보만(비용 제한·fail-open)
+    from app.dart.filter import company_dart_profile  # noqa: E402
+    dart_profiles = {}
+    prof_targets = list(dict.fromkeys(buy_order + tda_buy + legacy_sell + tda_sell))[:30]
+    for tk in prof_targets:
+        try:
+            pr = company_dart_profile(tk, asof=asof_str, recent_n=8)
+            if pr:
+                dart_profiles[tk] = pr
+        except Exception:
+            pass
+    print(f"DART 프로파일 선계산: {len(dart_profiles)}/{len(prof_targets)}종목", file=sys.stderr)
+
     payload = {
         "meta": {"asof": str(asof.date()), "next_day": str(nxt.date()),
                  "system_date": f"{today[:4]}-{today[4:6]}-{today[6:]}",
@@ -305,7 +318,7 @@ def main():
                      "exit_full_pct": float(tcfg.get("exit_full_pct", 0.85)),
                      "exit_trim_frac": float(tcfg.get("exit_trim_frac", 0.5))},
         "all_stocks": fetch_all_stocks(auth, asof_str), "broad": broad, "overnight": overnight, "dart": dart_flags,
-        "dart_excluded": dart_excluded,
+        "dart_excluded": dart_excluded, "dart_profiles": dart_profiles,
     }
     tpl = open(TEMPLATE, encoding="utf-8").read()
     html = tpl.replace("__DATA__", json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
