@@ -661,13 +661,18 @@ function _dmd(d){ const s=(d||"").replace(/[^0-9]/g,""); return s.length>=8?s.sl
 function dartBlock(tk){
   const p=(dartProfiles||{})[tk]||((DATA.dart_profiles||{})[tk]); if(!p||p.error) return "";
   const parts=[];
-  if(p.distress&&p.distress.level){ const c=p.distress.level==="crit"?"neg":"";
-    parts.push(`<div class="srow"><b class="${c}">재무 ${p.distress.level==="crit"?"위험":"주의"}: ${esc((p.distress.flags||[]).join(", "))}</b> <span class="sub">부채비율 ${p.distress.debt_ratio??'-'}% · 유동비율 ${p.distress.curr_ratio??'-'}% <span class="tip">검증상 자동제외 아님(참고)❓</span></span></div>`); }
+  if(p.distress){ const d=p.distress;   // 재무 스냅샷 항상 표시(건강해도) + 부실 시 강조
+    const fmtB=(v)=>v==null?'-':(Math.abs(v)>=1e12?(v/1e12).toFixed(1)+'조':Math.abs(v)>=1e8?Math.round(v/1e8).toLocaleString()+'억':W(v));
+    const head=d.level?`<b style="color:${d.level==='crit'?'#f0584c':'#e0a93b'}">재무 ${d.level==='crit'?'위험':'주의'}: ${esc((d.flags||[]).join(', '))}</b>`:`<b style="color:var(--ink2)">재무</b>`;
+    parts.push(`<div class="srow">${head} <span class="sub">부채 ${d.debt_ratio??'-'}% · 유동 ${d.curr_ratio??'-'}% · 매출 ${fmtB(d.revenue)} · 영업익 ${fmtB(d.op_income)}${d.op_loss?' <span style="color:#e0a93b">적자</span>':''}</span></div>`); }
+  if(p.audit&&p.audit.opinion){ const bad=/거절|부적정|한정|범위제한|비적정/.test(p.audit.opinion);
+    parts.push(`<div class="srow"><span class="sub">감사의견 <b style="${bad?'color:#f0584c':'color:var(--ink2)'}">${esc(p.audit.opinion)}</b>${p.audit.auditor?' ('+esc(p.audit.auditor)+')':''}</span></div>`); }
   if(p.dilution&&p.dilution.length){ const d=p.dilution[0];
     parts.push(`<div class="srow"><span class="sub">희석: ${esc(d.type)}${d.dilution_pct?' '+d.dilution_pct+'%':''} ${esc(d.method||'')} (${_dmd(d.date)})</span></div>`); }
   const sells=(p.insiders||[]).filter(x=>x.change<0).concat((p.major_holders||[]).filter(x=>x.change<0));
   if(sells.length){ parts.push(`<div class="srow"><span class="sub">지분 매도 ${sells.length}건 — ${esc(sells[0].who||'')} ${_dmd(sells[0].date)}</span></div>`); }
-  if(p.contracts&&p.contracts.length){ parts.push(`<div class="srow"><span class="sub" style="color:var(--up)">공급계약 체결 ${p.contracts.length}건 (${_dmd(p.contracts[0].date)})</span></div>`); }
+  if(p.contracts&&p.contracts.length){ parts.push(`<div class="srow"><span class="sub" style="color:var(--buy)">공급계약 체결 ${p.contracts.length}건 (${_dmd(p.contracts[0].date)})</span></div>`); }
+  if(p.buyback&&p.buyback.length){ parts.push(`<div class="srow"><span class="sub" style="color:var(--buy)">자사주 매입/신탁 ${p.buyback.length}건 (${_dmd(p.buyback[0].date)})</span></div>`); }
   if(p.recent&&p.recent.length){
     const rows=p.recent.map(it=>{ const col=it.kind==="terminal"||it.kind==="crit"?"var(--up)":it.kind==="warn"?"#e0a93b":"var(--mut)";
       return `<div style="font-size:10.5px;color:${col}">${_dmd(it.date)} ${esc(it.title)}</div>`; }).join("");

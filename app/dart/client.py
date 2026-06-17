@@ -215,6 +215,23 @@ def financial_indicators(corp_code, bsns_year, reprt_code, idx_cl_code="M220000"
     return out
 
 
+def audit_opinion(corp_code, bsns_year, reprt_code, timeout=12) -> dict | None:
+    """DS002 accnutAdtorNmNdAdtOpinion — 감사의견(당기) {opinion, auditor}. 적정/한정/부적정/의견거절."""
+    _check_report(bsns_year, reprt_code)
+    r = requests.get(f"{BASE}/accnutAdtorNmNdAdtOpinion.json", params={
+        "crtfc_key": load_dart_key(), "corp_code": corp_code, "bsns_year": str(bsns_year),
+        "reprt_code": str(reprt_code)}, timeout=timeout)
+    r.raise_for_status()
+    d = r.json()
+    if d.get("status") != "000":
+        return None
+    rows = d.get("list", []) or []
+    cur = next((x for x in rows if "당기" in (x.get("bsns_year") or "")), rows[0] if rows else None)
+    if not cur:
+        return None
+    return {"opinion": (cur.get("adt_opinion") or "").strip(), "auditor": (cur.get("adtor") or "").strip()}
+
+
 def disclosures(corp_code: str, bgn_de: str, end_de: str, timeout: int = 15) -> list[dict]:
     """기간 내 공시 목록 [{rcept_dt, report_nm, rcept_no}, ...] (최신순)."""
     _check_range(bgn_de, end_de)               # ★기간 형식/순서 검증 — 잘못된 범위 조용한 빈결과 방지★

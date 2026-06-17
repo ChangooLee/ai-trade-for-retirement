@@ -63,6 +63,10 @@ WARN = re.compile(
     r"(유상증자결정|주주배정|일반공모증자|일반공모)(?!.*제3자배정)|"
     r"전환사채권발행결정|전환사채발행|교환사채권발행결정|"
     r"신주인수권부사채권발행결정|신주인수권부사채발행|"
+    # ★채권/채무 발행·재무이슈(가시성 — 부채/재무상태에 영향) 전부 WARN(앰버)로 강조★
+    r"회사채발행|무보증사채|사채권발행|사채발행결정|단기사채발행|채무증권발행|"
+    r"신종자본증권|조건부자본증권|전자단기사채|기업어음증권|미상환(사채|증권|잔액)|"
+    r"매출액또는손익구조|손익구조30|영업손실|당기순손실|차입금|담보제공|채무보증|"
     r"(무상감자|감자결정|감자완료|주식병합)(?!.*(해제|변경상장))|"
     r"단일판매공급계약해지|단일판매공급계약해제|공급계약해지|계약해제|"
     r"(최대주주변경|경영권변경)(?!.*(해제|취소))|"
@@ -172,9 +176,17 @@ def terminal_events(corp_code: str, bgn_de: str, end_de: str) -> list[str]:
 
 
 from app.dart.client import (financial_accounts, financial_indicators,  # noqa: E402
-                             dilution_events, major_holders, insider_trades)
+                             dilution_events, major_holders, insider_trades, audit_opinion)
 
 _PERIODIC = re.compile(r"(사업보고서|반기보고서|분기보고서)")
+# 정기·루틴 공시(이벤트성 아님) — 최근공시 목록에서 제외해 의미있는 뉴스만 남김.
+#  지분 루틴(소유상황·대량보유·변동신고)은 별도 '지분' 섹션서 처리하므로 목록서 빼도 신호 손실 없음.
+_ROUTINE_DISCL = re.compile(
+    r"사업보고서|반기보고서|분기보고서|기업지배구조보고서|대규모기업집단현황|"
+    r"소유상황보고서|소유주식변동신고서|대량보유상황보고서|"
+    r"임원.{0,2}주요주주|사외이사.{0,4}(현황|선임|해임)|"
+    r"주주총회소집|정기주주총회|의결권대리행사|감사보고서제출|결산실적공시예고|기업설명회|IR")
+# 유지(의미있는 뉴스): 영업(잠정)실적·기업가치제고계획·매출또는손익구조변경·단일판매공급계약·증자/CB·합병 등은 제외 대상 아님
 _PERIOD_DT = re.compile(r"\(?(\d{4})[.\-/](\d{2})\)?")     # (2024.12) / 2025.03
 _MO2REPRT = {3: "11013", 6: "11012", 9: "11014", 12: "11011"}   # 1Q/반기/3Q/사업
 
@@ -200,6 +212,7 @@ def financial_distress(corp_code: str, bsns_year: str, reprt_code: str) -> dict:
     ind = financial_indicators(corp_code, bsns_year, reprt_code, "M220000")
     cap_total, cap_stock = acc.get("자본총계"), acc.get("자본금")
     debt, curr = ind.get("부채비율"), ind.get("유동비율")
+    revenue, op_income = acc.get("매출액"), acc.get("영업이익")
     flags, level = [], None
     if cap_total is not None and cap_total <= 0:
         flags.append("완전자본잠식"); level = "crit"
@@ -210,7 +223,8 @@ def financial_distress(corp_code: str, bsns_year: str, reprt_code: str) -> dict:
     if curr is not None and 0 < curr < 50:
         flags.append(f"유동비율{curr:.0f}%"); level = level or "warn"
     return {"flags": flags, "level": level, "cap_total": cap_total, "cap_stock": cap_stock,
-            "debt_ratio": debt, "curr_ratio": curr, "bsns_year": bsns_year, "reprt_code": reprt_code}
+            "debt_ratio": debt, "curr_ratio": curr, "revenue": revenue, "op_income": op_income,
+            "op_loss": (op_income is not None and op_income < 0), "bsns_year": bsns_year, "reprt_code": reprt_code}
 
 
 def company_dart_profile(ticker: str, asof: str | None = None, recent_n: int = 10, lookback_days: int = 365) -> dict | None:
@@ -223,11 +237,18 @@ def company_dart_profile(ticker: str, asof: str | None = None, recent_n: int = 1
     end = asof or dt.date.today().strftime("%Y%m%d")
     bgn = (dt.datetime.strptime(end, "%Y%m%d") - dt.timedelta(days=lookback_days)).strftime("%Y%m%d")
     p = {"ticker": str(ticker).zfill(6)}
-    try:                                                   # 1순위 재무부실
+    try:                                                   # 1순위 재무부실 + 감사의견(같은 보고서)
         rep = latest_report(corp, end)
-        p["distress"] = financial_distress(corp, rep[0], rep[1]) if rep else None
+        if rep:
+            p["distress"] = financial_distress(corp, rep[0], rep[1])
+            try:
+                p["audit"] = audit_opinion(corp, rep[0], "11011")   # 감사의견은 연간 사업보고서 기준
+            except Exception:
+                p["audit"] = None
+        else:
+            p["distress"], p["audit"] = None, None
     except Exception:
-        p["distress"] = None
+        p["distress"], p["audit"] = None, None
     try:                                                   # 2순위 희석(유증/CB)
         p["dilution"] = [d for d in dilution_events(corp, bgn, end) if d["date"] <= end][:5]
     except Exception:
@@ -237,15 +258,20 @@ def company_dart_profile(ticker: str, asof: str | None = None, recent_n: int = 1
         p["insiders"] = [h for h in insider_trades(corp) if h["date"] <= end][:5]
     except Exception:
         p["major_holders"], p["insiders"] = [], []
-    try:                                                   # 4순위 공급계약 + 최근공시 N건(분류 태그 포함)
+    try:                                                   # 4순위 공급계약 + 자사주매입 + 최근공시(정기·루틴 제외)
         items = [it for it in disclosures(corp, bgn, end) if it["rcept_dt"] and it["rcept_dt"] <= end]
+        def _nm(it):
+            return it["report_nm"].replace(" ", "")
         p["contracts"] = [{"date": it["rcept_dt"], "title": it["report_nm"]}
-                          for it in items if "공급계약" in it["report_nm"].replace(" ", "") and "체결" in it["report_nm"]][:5]
+                          for it in items if "공급계약" in _nm(it) and "체결" in _nm(it)][:5]
+        p["buyback"] = [{"date": it["rcept_dt"], "title": it["report_nm"]}      # 자사주 매입/신탁(긍정)
+                        for it in items if "자기주식" in _nm(it) and ("취득" in _nm(it) or "신탁" in _nm(it)) and "처분" not in _nm(it)][:3]
+        meaningful = [it for it in items if not _ROUTINE_DISCL.search(_nm(it))]  # ★정기·루틴 공시 제외★
         p["recent"] = [{"date": it["rcept_dt"], "title": it["report_nm"],
                         "kind": ("terminal" if is_terminal(it["report_nm"]) else classify(it["report_nm"]))}
-                       for it in items[:recent_n]]
+                       for it in meaningful[:recent_n]]
     except Exception:
-        p["contracts"], p["recent"] = [], []
+        p["contracts"], p["buyback"], p["recent"] = [], [], []
     return p
 
 
