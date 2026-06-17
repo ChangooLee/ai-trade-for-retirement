@@ -92,11 +92,126 @@ def structured_terminal_events(corp_code: str, bgn_de: str, end_de: str, timeout
             d = r.json()
             if d.get("status") == "000":
                 for x in d.get("list", []):
-                    rd = x.get("rcept_dt")
+                    rd = _d8(x.get("rcept_dt"))
                     if rd:
                         out.append({"date": rd, "event": name})
         except Exception:
             continue                                  # 한 엔드포인트 실패가 전체를 막지 않게(fail-open)
+    return out
+
+
+def _num(v):
+    try:
+        return float(str(v).replace(",", ""))
+    except (ValueError, TypeError):
+        return None
+
+
+def _d8(v) -> str:
+    """DART 날짜 정규화 → YYYYMMDD. ★엔드포인트마다 '20260604' vs '2026-05-22' 혼재 → 통일★
+    (혼재 시 'date<=asof' 룩어헤드 비교가 깨짐 — 반드시 정규화)."""
+    return re.sub(r"\D", "", str(v or ""))[:8]
+
+
+def dilution_events(corp_code: str, bgn_de: str, end_de: str, timeout: int = 12) -> list[dict]:
+    """DS005 유상증자(piicDecsn)+전환사채(cvbdIsDecsn) 발행규모 → [{date,type,dilution_pct,method}] (희석 정량화·2순위)."""
+    _check_range(bgn_de, end_de, clamp_min=True)
+    key = load_dart_key()
+    out = []
+    for ep, typ in (("piicDecsn.json", "유상증자"), ("cvbdIsDecsn.json", "전환사채")):
+        try:
+            d = requests.get(f"{BASE}/{ep}", params={"crtfc_key": key, "corp_code": corp_code,
+                             "bgn_de": bgn_de, "end_de": end_de}, timeout=timeout).json()
+            if d.get("status") != "000":
+                continue
+            for x in d.get("list", []):
+                new = _num(x.get("nstk_ostk_cnt")); base = _num(x.get("bfic_tisstk_ostk"))
+                pct = (new / base * 100) if (new and base) else None
+                out.append({"date": _d8(x.get("rcept_dt")), "type": typ,
+                            "dilution_pct": round(pct, 1) if pct else None,
+                            "method": (x.get("ic_mthn") or "").strip()[:20]})
+        except Exception:
+            continue
+    return sorted(out, key=lambda e: e["date"], reverse=True)
+
+
+def major_holders(corp_code: str, timeout: int = 12) -> list[dict]:
+    """DS004 대량보유(majorstock, 5%↑) 최신 변동 → [{date,who,rate,change}] (3순위)."""
+    key = load_dart_key()
+    try:
+        d = requests.get(f"{BASE}/majorstock.json", params={"crtfc_key": key, "corp_code": corp_code},
+                         timeout=timeout).json()
+        if d.get("status") != "000":
+            return []
+        rows = [{"date": _d8(x.get("rcept_dt")), "who": (x.get("repror") or "").strip(),
+                 "rate": _num(x.get("stkrt")), "change": _num(x.get("stkrt_irds"))} for x in d.get("list", [])]
+        return sorted(rows, key=lambda e: e["date"], reverse=True)
+    except Exception:
+        return []
+
+
+def insider_trades(corp_code: str, timeout: int = 12) -> list[dict]:
+    """DS004 임원·주요주주 소유(elestock) 최신 → [{date,who,pos,change}] (3순위, 매도=change<0)."""
+    key = load_dart_key()
+    try:
+        d = requests.get(f"{BASE}/elestock.json", params={"crtfc_key": key, "corp_code": corp_code},
+                         timeout=timeout).json()
+        if d.get("status") != "000":
+            return []
+        rows = [{"date": _d8(x.get("rcept_dt")), "who": (x.get("repror") or "").strip(),
+                 "pos": (x.get("isu_exctv_ofcps") or "").strip(), "change": _num(x.get("sp_stock_lmp_irds_cnt"))}
+                for x in d.get("list", [])]
+        return sorted(rows, key=lambda e: e["date"], reverse=True)
+    except Exception:
+        return []
+
+
+def _check_report(bsns_year: str, reprt_code: str):
+    if not re.fullmatch(r"\d{4}", str(bsns_year)):
+        raise ValueError(f"DART 사업연도 형식 오류: {bsns_year!r}")
+    if str(reprt_code) not in ("11011", "11012", "11013", "11014"):
+        raise ValueError(f"DART 보고서코드 오류(11011/11012/11013/11014): {reprt_code!r}")
+
+
+def financial_accounts(corp_code, bsns_year, reprt_code, fs_div="OFS", timeout=15) -> dict:
+    """DS003 fnlttSinglAcnt — 정기보고서 재무제표 {account_nm: 당기금액(float)}. 자본잠식 판정용(자본총계/자본금)."""
+    _check_report(bsns_year, reprt_code)
+    r = requests.get(f"{BASE}/fnlttSinglAcnt.json", params={
+        "crtfc_key": load_dart_key(), "corp_code": corp_code, "bsns_year": str(bsns_year),
+        "reprt_code": str(reprt_code), "fs_div": fs_div}, timeout=timeout)
+    r.raise_for_status()
+    d = r.json()
+    if d.get("status") != "000":
+        return {}
+    out = {}
+    for x in d.get("list", []):
+        nm = (x.get("account_nm") or "").strip()
+        v = str(x.get("thstrm_amount", "")).replace(",", "")
+        try:
+            out[nm] = float(v)
+        except ValueError:
+            pass
+    return out
+
+
+def financial_indicators(corp_code, bsns_year, reprt_code, idx_cl_code="M220000", timeout=15) -> dict:
+    """DS003 fnlttSinglIndx — 재무비율 {idx_nm: idx_val(float)}. 기본 M220000=안정성(부채비율·유동비율 등)."""
+    _check_report(bsns_year, reprt_code)
+    r = requests.get(f"{BASE}/fnlttSinglIndx.json", params={
+        "crtfc_key": load_dart_key(), "corp_code": corp_code, "bsns_year": str(bsns_year),
+        "reprt_code": str(reprt_code), "idx_cl_code": idx_cl_code}, timeout=timeout)
+    r.raise_for_status()
+    d = r.json()
+    if d.get("status") != "000":
+        return {}
+    out = {}
+    for x in d.get("list", []):
+        nm = (x.get("idx_nm") or "").strip()
+        v = x.get("idx_val")
+        try:
+            out[nm] = float(v) if v not in (None, "", "-") else None
+        except (ValueError, TypeError):
+            out[nm] = None
     return out
 
 
@@ -112,5 +227,5 @@ def disclosures(corp_code: str, bgn_de: str, end_de: str, timeout: int = 15) -> 
     d = r.json()
     if d.get("status") != "000":          # 013 = 조회 결과 없음(정상)
         return []
-    return [{"rcept_dt": x.get("rcept_dt", ""), "report_nm": (x.get("report_nm") or "").strip(),
+    return [{"rcept_dt": _d8(x.get("rcept_dt")), "report_nm": (x.get("report_nm") or "").strip(),
              "rcept_no": x.get("rcept_no", "")} for x in d.get("list", [])]

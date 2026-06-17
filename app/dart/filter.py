@@ -171,6 +171,84 @@ def terminal_events(corp_code: str, bgn_de: str, end_de: str) -> list[str]:
     return sorted(dates)
 
 
+from app.dart.client import (financial_accounts, financial_indicators,  # noqa: E402
+                             dilution_events, major_holders, insider_trades)
+
+_PERIODIC = re.compile(r"(사업보고서|반기보고서|분기보고서)")
+_PERIOD_DT = re.compile(r"\(?(\d{4})[.\-/](\d{2})\)?")     # (2024.12) / 2025.03
+_MO2REPRT = {3: "11013", 6: "11012", 9: "11014", 12: "11011"}   # 1Q/반기/3Q/사업
+
+
+def latest_report(corp_code: str, asof: str):
+    """asof(YYYYMMDD) 이전 가장 최근 정기보고서 → (bsns_year, reprt_code) | None. ★룩어헤드: rcept_dt<=asof만★."""
+    bgn = f"{int(asof[:4]) - 2}{asof[4:]}"                 # 2년 전부터(직전 정기보고서 확보 충분)
+    best = None
+    for it in disclosures(corp_code, bgn, asof):
+        nm, rd = it["report_nm"], it["rcept_dt"]
+        if not rd or rd > asof or not _PERIODIC.search(nm):
+            continue
+        m = _PERIOD_DT.search(nm)
+        reprt = _MO2REPRT.get(int(m.group(2))) if m else None
+        if reprt and (best is None or rd > best[2]):
+            best = (m.group(1), reprt, rd)
+    return (best[0], best[1]) if best else None
+
+
+def financial_distress(corp_code: str, bsns_year: str, reprt_code: str) -> dict:
+    """재무 부실 판정 — 자본잠식(완전=crit·부분=warn)·부채비율≥400%·유동비율<50%(warn). DS003 재무제표+안정성비율."""
+    acc = financial_accounts(corp_code, bsns_year, reprt_code)
+    ind = financial_indicators(corp_code, bsns_year, reprt_code, "M220000")
+    cap_total, cap_stock = acc.get("자본총계"), acc.get("자본금")
+    debt, curr = ind.get("부채비율"), ind.get("유동비율")
+    flags, level = [], None
+    if cap_total is not None and cap_total <= 0:
+        flags.append("완전자본잠식"); level = "crit"
+    elif cap_total is not None and cap_stock and cap_total < cap_stock:
+        flags.append("부분자본잠식"); level = level or "warn"
+    if debt is not None and debt >= 400:
+        flags.append(f"부채비율{debt:.0f}%"); level = level or "warn"
+    if curr is not None and 0 < curr < 50:
+        flags.append(f"유동비율{curr:.0f}%"); level = level or "warn"
+    return {"flags": flags, "level": level, "cap_total": cap_total, "cap_stock": cap_stock,
+            "debt_ratio": debt, "curr_ratio": curr, "bsns_year": bsns_year, "reprt_code": reprt_code}
+
+
+def company_dart_profile(ticker: str, asof: str | None = None, recent_n: int = 10, lookback_days: int = 365) -> dict | None:
+    """종목 1개 DART 종합 프로파일 — 재무부실(1)·희석(2)·지분(3)·공급계약(4)·최근공시 N건.
+    ★asof 이전(rcept_dt<=asof)만 — 룩어헤드 차단.★ 미상장/매핑실패 → None. (라이브 /api/dart·화면용)"""
+    cmap = corp_code_map()
+    corp = cmap.get(str(ticker).zfill(6))
+    if not corp:
+        return None
+    end = asof or dt.date.today().strftime("%Y%m%d")
+    bgn = (dt.datetime.strptime(end, "%Y%m%d") - dt.timedelta(days=lookback_days)).strftime("%Y%m%d")
+    p = {"ticker": str(ticker).zfill(6)}
+    try:                                                   # 1순위 재무부실
+        rep = latest_report(corp, end)
+        p["distress"] = financial_distress(corp, rep[0], rep[1]) if rep else None
+    except Exception:
+        p["distress"] = None
+    try:                                                   # 2순위 희석(유증/CB)
+        p["dilution"] = [d for d in dilution_events(corp, bgn, end) if d["date"] <= end][:5]
+    except Exception:
+        p["dilution"] = []
+    try:                                                   # 3순위 대량보유·임원매도
+        p["major_holders"] = [h for h in major_holders(corp) if h["date"] <= end][:5]
+        p["insiders"] = [h for h in insider_trades(corp) if h["date"] <= end][:5]
+    except Exception:
+        p["major_holders"], p["insiders"] = [], []
+    try:                                                   # 4순위 공급계약 + 최근공시 N건(분류 태그 포함)
+        items = [it for it in disclosures(corp, bgn, end) if it["rcept_dt"] and it["rcept_dt"] <= end]
+        p["contracts"] = [{"date": it["rcept_dt"], "title": it["report_nm"]}
+                          for it in items if "공급계약" in it["report_nm"].replace(" ", "") and "체결" in it["report_nm"]][:5]
+        p["recent"] = [{"date": it["rcept_dt"], "title": it["report_nm"],
+                        "kind": ("terminal" if is_terminal(it["report_nm"]) else classify(it["report_nm"]))}
+                       for it in items[:recent_n]]
+    except Exception:
+        p["contracts"], p["recent"] = [], []
+    return p
+
+
 def crit_tickers(flags: dict) -> set:
     """annotate_tickers 결과에서 crit 공시가 있는 종목코드 집합."""
     return {tk for tk, f in flags.items() if f.get("crit")}

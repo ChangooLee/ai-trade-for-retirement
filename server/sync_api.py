@@ -16,6 +16,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 MAX_STREAMS = 64
 ACTIVE_STREAMS = 0
 ACTIVE_LOCK = threading.Lock()
+_DART_CACHE = {}          # {ticker: (ts, profile)} — DART 프로파일 6h 캐시(느린 다중 조회 회피)
+_DART_TTL = 6 * 3600
 
 PORT = int(os.environ.get("SYNC_PORT", "8799"))
 CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
@@ -134,7 +136,37 @@ class Handler(BaseHTTPRequestHandler):
             return self._quote()
         if path == "/api/stream":
             return self._stream()
+        if path == "/api/dart":
+            return self._dart()
         return self._send(404, {"error": "not found"})
+
+    def _dart(self):
+        """종목별 DART 종합 프로파일(재무부실·희석·지분·공급계약·최근공시10) — 보유종목 화면용. 로그인 전용·6h 캐시."""
+        import urllib.parse, re as _re, importlib
+        if not self._auth():
+            return self._send(401, {"error": "unauthorized"})
+        q = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+        codes = [c for c in (q.get("codes") or [""])[0].split(",") if _re.match(r"^\d{6}$", c)][:12]
+        if not codes:
+            return self._send(400, {"error": "codes 필요(6자리, 최대 12)"})
+        try:
+            sys.path.insert(0, os.path.join(ROOT, ".."))
+            F = importlib.import_module("app.dart.filter")
+        except Exception as e:
+            return self._send(503, {"error": f"dart unavailable: {str(e)[:120]}"})
+        now = time.time()
+        out = {}
+        for c in codes:
+            hit = _DART_CACHE.get(c)
+            if hit and now - hit[0] < _DART_TTL:
+                out[c] = hit[1]; continue
+            try:
+                prof = F.company_dart_profile(c, recent_n=10)
+            except Exception as e:
+                prof = {"ticker": c, "error": str(e)[:100]}
+            _DART_CACHE[c] = (now, prof)
+            out[c] = prof
+        return self._send(200, out)
 
     def _stream(self):
         """SSE — KIS WS 틱 캐시(app.data.kis_ws.LATEST)를 보유종목별로 푸시. EventSource는 헤더 못 보내 ?token= 인증.

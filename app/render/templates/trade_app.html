@@ -643,6 +643,36 @@ function cbStatus(total){   // 당월 손익을 '현금 투자액(원금)' 대�
   return {key, prin, mtd, mtdWon, limitWon: prin*CB_LIMIT, basePnl: base.pnl,
           tripped: mtd <= -CB_LIMIT, active:true};
 }
+// ---- DART 종합 프로파일(보유종목) — 재무부실·희석·지분·공급계약·최근공시10 (서버 /api/dart, 6h캐시) ----
+let dartProfiles = {};
+async function loadDart(){
+  if(!idToken) return;
+  const codes=[...new Set(holdings.map(h=>h.ticker))].filter(t=>/^\d{6}$/.test(t)).slice(0,12);
+  if(!codes.length) return;
+  try{
+    const r=await fetch("/trading/api/dart?codes="+codes.join(","),{headers:{Authorization:"Bearer "+idToken}});
+    if(!r.ok) return;
+    dartProfiles=await r.json(); render();
+  }catch(e){}
+}
+function _dmd(d){ const s=(d||"").replace(/[^0-9]/g,""); return s.length>=8?s.slice(4,6)+"-"+s.slice(6,8):(d||""); }
+function dartBlock(tk){
+  const p=(dartProfiles||{})[tk]; if(!p||p.error) return "";
+  const parts=[];
+  if(p.distress&&p.distress.level){ const c=p.distress.level==="crit"?"neg":"";
+    parts.push(`<div class="srow"><b class="${c}">재무 ${p.distress.level==="crit"?"위험":"주의"}: ${esc((p.distress.flags||[]).join(", "))}</b> <span class="sub">부채비율 ${p.distress.debt_ratio??'-'}% · 유동비율 ${p.distress.curr_ratio??'-'}% <span class="tip">검증상 자동제외 아님(참고)❓</span></span></div>`); }
+  if(p.dilution&&p.dilution.length){ const d=p.dilution[0];
+    parts.push(`<div class="srow"><span class="sub">희석: ${esc(d.type)}${d.dilution_pct?' '+d.dilution_pct+'%':''} ${esc(d.method||'')} (${_dmd(d.date)})</span></div>`); }
+  const sells=(p.insiders||[]).filter(x=>x.change<0).concat((p.major_holders||[]).filter(x=>x.change<0));
+  if(sells.length){ parts.push(`<div class="srow"><span class="sub">지분 매도 ${sells.length}건 — ${esc(sells[0].who||'')} ${_dmd(sells[0].date)}</span></div>`); }
+  if(p.contracts&&p.contracts.length){ parts.push(`<div class="srow"><span class="sub" style="color:var(--up)">공급계약 체결 ${p.contracts.length}건 (${_dmd(p.contracts[0].date)})</span></div>`); }
+  if(p.recent&&p.recent.length){
+    const rows=p.recent.map(it=>{ const col=it.kind==="terminal"||it.kind==="crit"?"var(--up)":it.kind==="warn"?"#e0a93b":"var(--mut)";
+      return `<div style="font-size:10.5px;color:${col}">${_dmd(it.date)} ${esc(it.title)}</div>`; }).join("");
+    parts.push(`<details style="margin-top:4px"><summary class="sub">최근 공시 ${p.recent.length}건 (DART)</summary><div style="margin-top:3px">${rows}</div></details>`);
+  }
+  return parts.length?`<div style="border-top:1px solid var(--line);margin-top:6px;padding-top:6px"><span class="sub" style="color:var(--ink2)">📋 공시·재무 (DART)</span>${parts.join("")}</div>`:"";
+}
 const ALL = DATA.all_stocks || {};   // 코드 -> [이름, 종가, 시장] (전 상장종목)
 const BROAD = DATA.broad || {};      // 유니버스 밖 + 분석(지표·TDA 스칼라, 차트 없음)
 let LIVE = {};   // KIS 실시간 시세 오버라이드 {ticker: price} — 있으면 EOD 종가 대신 사용
@@ -925,7 +955,7 @@ function render(){
         <div>평가손익 <b class="${h.ret>=0?'pos':'neg'}">${W(h.value-h.cost)} (${P(h.ret)})</b></div>
         <div>현재가 <b>${W(h.cur)}</b>${LIVE[h.ticker]!=null?' <span class="sub" style="color:var(--up)">●실시간</span>':''} <span class="sub">/ 진입 ${W(h.entry_price)}</span></div>
         <div>청산예정 <b>${h.planned}</b> <span class="sub">(8주·D-${h.rem})</span></div>
-        ${tdaLine}${levelRows(h.ticker,h.cur)}</div></div>`;
+        ${tdaLine}${levelRows(h.ticker,h.cur)}</div>${dartBlock(h.ticker)}</div>`;
     if(isSell) sc.push(card); else hc.push(card);
   });
   document.getElementById("holdCards").innerHTML=hc.length?hc.join(""):'<div class="empty">보유 종목 없음. 위에서 검색해 추가하세요.</div>';
@@ -1135,7 +1165,7 @@ function addHolding(){
   holdings.push({ticker:tk,entry_date:date,entry_price:price,shares:shares});save();
   document.getElementById("search").value="";document.getElementById("search").dataset.ticker="";
   document.getElementById("price").value="";document.getElementById("shares").value="";
-  renderHoldInput();render();reconnectLive();   // 새 종목 틱 구독
+  renderHoldInput();render();reconnectLive();loadDart();   // 새 종목 틱 구독 + DART 프로파일
 }
 // 검색 자동완성 (전 상장종목 — 유니버스 밖도 검색·추가 가능)
 const SRC = Object.keys(ALL).length ? ALL
@@ -1165,7 +1195,7 @@ function activateTab(p){
     try{ paintCharts(); }catch(e){}
     if(p==="sim" && simData && simData.active) try{ drawSimChart(simData.equity_curve||[], simData.investment, "simChart"); }catch(e){}
   }, 40);
-  if(p==="portfolio") try{ startSSE(); refreshQuotes(); }catch(e){}   // 보유 탭 진입: 틱 SSE 연결 + 즉시 1회 시세
+  if(p==="portfolio") try{ startSSE(); refreshQuotes(); loadDart(); }catch(e){}   // 보유 탭 진입: 틱 SSE + 시세 + DART 프로파일
   else try{ stopSSE(); }catch(e){}                                    // 다른 탭: 스트림 종료(서버 WS 부담↓)
 }
 document.querySelectorAll("#tabs .tab").forEach(t=>t.addEventListener("click",()=>activateTab(t.dataset.panel)));
