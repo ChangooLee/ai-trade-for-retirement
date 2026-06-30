@@ -73,7 +73,9 @@ def main():
         if snap is None:
             continue
         uni = snap[(snap["close"] >= mc) & (snap["listing_days"] >= ml) & (snap.get("avg_trdval20", 0) > liq)]
-        uni = uni.sort_values("mktcap", ascending=False).head(top_n)
+        # 시총 우선, 없으면(서버 라이브 daily_ohlcv엔 mktcap 미포함) 거래대금 폴백 — 패널이 이미 시총 top유니버스라 결과 동일
+        sort_col = "mktcap" if "mktcap" in uni.columns else ("avg_trdval20" if "avg_trdval20" in uni.columns else None)
+        uni = (uni.sort_values(sort_col, ascending=False) if sort_col else uni).head(top_n)
         if len(uni) < 50:
             continue
         wkey = d.to_period("W")
