@@ -6,6 +6,9 @@ set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 ROOT="$(pwd)"
 PY="$ROOT/.venv/bin/python"
+# pykrx 회원 로그인 자격(.env의 KRX_ID/KRX_PW)을 os.environ에 노출 — pykrx auth.py가 os.getenv로 읽음.
+# (KRX가 데이터 엔드포인트를 점점 로그인 게이팅 → 안정적 수집 위해. 비밀은 .env에서만, 명령줄 노출 없음.)
+set -a; . <(grep -E "^KRX_(ID|PW)=" "$ROOT/.env" 2>/dev/null) || true; set +a
 PUB="/var/www/leaders/index.html"
 mkdir -p "$ROOT/logs"
 LOG="$ROOT/logs/batch_$(date +%Y%m%d).log"
