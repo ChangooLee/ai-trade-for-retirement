@@ -291,6 +291,35 @@ def main():
             pass
     print(f"DART 프로파일 선계산: {len(dart_profiles)}/{len(prof_targets)}종목", file=sys.stderr)
 
+    # 추천 이력 갱신 — 종목별 추천주차·사유·당시가·매수목표가(20주선 눌림대)·현재가·수익률(사용자 고민 해소)
+    all_stocks = fetch_all_stocks(auth, asof_str)
+    close_map = {tk: (v[1] if isinstance(v, (list, tuple)) and len(v) > 1 else None) for tk, v in (all_stocks or {}).items()}
+    _repo2 = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    # bt_archive(2017~ 일별 매수후보)로 현재 후보의 '최근 추천 시작일·당시가' 백필 — PSK홀딩스 류 고민 해소
+    first_reco = {}
+    try:
+        bt = json.load(open(os.path.join(_repo2, "state", "bt_days.json"), encoding="utf-8"))
+        btp = pd.read_parquet(os.path.join(_repo2, "state", "bt_prices.parquet"))
+        btp["d"] = btp["date"].astype(str).str[:10]
+        recent = sorted(bt.get("days", {}).keys())[-60:]      # 최근 60거래일 내 최초 등장 = 최근 추천 시작
+        for tk in buy_order:
+            appear = [d for d in recent if tk in (bt["days"][d].get("buy") or [])]
+            if appear:
+                d0 = appear[0]
+                px = btp[(btp["ticker"] == tk) & (btp["d"] == d0)]["close"]
+                first_reco[tk] = (d0, float(px.iloc[0]) if len(px) else None)
+    except Exception as e:
+        print(f"추천 백필 생략(bt_archive): {e}", file=sys.stderr)
+    try:
+        from app.batch import reco_archive  # noqa: E402
+        reco_hist = reco_archive.update(buy_order, stocks, close_map, str(asof.date()),
+                                        os.path.join(_repo2, "state", "reco_history.json"), first_reco=first_reco)
+        reco_week = reco_archive.week_label(str(asof.date()))
+        reco_list = sorted(reco_hist.values(), key=lambda h: (h.get("reco_date", ""), h.get("ticker", "")), reverse=True)
+        print(f"추천 이력: {len(reco_hist)}종목(활성 {sum(1 for h in reco_hist.values() if h.get('active'))}) · {reco_week}", file=sys.stderr)
+    except Exception as e:
+        print(f"추천 이력 갱신 실패(생략): {e}", file=sys.stderr); reco_list, reco_week = [], ""
+
     payload = {
         "meta": {"asof": str(asof.date()), "next_day": str(nxt.date()),
                  "system_date": f"{today[:4]}-{today[4:6]}-{today[6:]}",
@@ -317,8 +346,9 @@ def main():
                      "exit_trim_pct": float(tcfg.get("exit_trim_pct", 0.75)),
                      "exit_full_pct": float(tcfg.get("exit_full_pct", 0.85)),
                      "exit_trim_frac": float(tcfg.get("exit_trim_frac", 0.5))},
-        "all_stocks": fetch_all_stocks(auth, asof_str), "broad": broad, "overnight": overnight, "dart": dart_flags,
+        "all_stocks": all_stocks, "broad": broad, "overnight": overnight, "dart": dart_flags,
         "dart_excluded": dart_excluded, "dart_profiles": dart_profiles,
+        "reco_history": reco_list, "reco_week": reco_week,
     }
     tpl = open(TEMPLATE, encoding="utf-8").read()
     html = tpl.replace("__DATA__", json.dumps(payload, ensure_ascii=False, separators=(",", ":")))

@@ -158,6 +158,7 @@ details{margin-top:6px}summary{cursor:pointer;color:var(--ink2);font-size:12.5px
 
 <section class="panel" id="panel-discover">
 <h2>종목 발굴</h2>
+<div id="recoWeekBanner"></div>
 <div class="cmp">
   <div class="cmp-col">
     <div class="cmp-hd legacy">모멘텀·추세 방식 · 주도주 20주선 눌림</div>
@@ -176,6 +177,8 @@ details{margin-top:6px}summary{cursor:pointer;color:var(--ink2);font-size:12.5px
     <div id="tdaSell"></div>
   </div>
 </div>
+<div class="cmp-sub buy" style="margin-top:18px">📜 추천 이력 — 주차별 추천 종목 · 매수목표가 대비 현재 수익률</div>
+<div id="recoHistory"></div>
 
 <h2>오버나이트 단타 <span class="sub" style="font-weight:400">(당일 종가 매수 → 익일 시가 매도 · 1박)</span></h2>
 <div class="dxline"><span class="lab">데일리 루틴</span>이 화면은 매 거래일 <b>08:17경</b> 전일 종가 기준으로 갱신됩니다. ① <b>08:30~09:00</b> 어제 종가 매수분 <b>시가 매도 주문</b>(전량·가격 불문 — 전날 밤 예약주문도 가능, 화면은 확인용) → ② 낮 동안 워치리스트 숙지 → ③ <b>15:20</b> HTS로 당일 거래량·등락 3조건 재확인 → ④ 충족 종목만 <b>15:20~30 종가(동시호가) 매수</b></div>
@@ -866,11 +869,34 @@ function chips(s){const c=[`RS ${Math.round(s.rs)}`,`52주고점 ${Math.round(s.
 function miniChart(tk){return `<canvas data-tk="${tk}"></canvas>`;}
 function qtyFor(s,pw,total){const sh=Math.max(0,Math.floor(pw*total/s.close));return {sh,amt:sh*s.close};}
 // 모멘텀·추세 방식 매수 카드 (F리더 ∩ 20주선 눌림)
+function renderRecoHistory(){
+  const el=document.getElementById("recoHistory"); if(!el) return;
+  const hist=(DATA.reco_history||[]);
+  if(!hist.length){ el.innerHTML='<div class="empty">아직 추천 이력이 없습니다 — 매 배치(일 2회)에서 누적됩니다.</div>'; return; }
+  const rows=hist.slice(0,80).map(h=>{
+    const ret=h.ret, retCls=ret==null?'':(ret>=0?'pos':'neg');
+    const cur=h.cur_close, curCls=(cur!=null&&h.reco_close!=null)?(cur>=h.reco_close?'pos':'neg'):'';
+    const st=h.active?'<span class="pill buy" style="font-size:9px;padding:1px 5px">추천중</span>':'<span class="sub">과거</span>';
+    return `<tr><td class="sub">${esc(h.week||'')}<br><span class="sub">${_dmd(h.reco_date)}</span></td>
+      <td><b>${esc(h.name||h.ticker)}</b> <span class="mono">${h.ticker}</span> ${st}<br><span class="sub">${esc(h.reason||'')}</span></td>
+      <td class="num">${W(h.reco_close)}</td>
+      <td class="num sub">${h.target_low?W(h.target_low)+'~'+W(h.target_high):'—'}</td>
+      <td class="num ${curCls}">${cur!=null?W(cur):'—'}</td>
+      <td class="num ${retCls}"><b>${ret!=null?P(ret):'—'}</b></td></tr>`;
+  }).join("");
+  el.innerHTML=`<table><thead><tr><th>추천주차</th><th>종목 · 사유</th><th class="num">추천당시가</th><th class="num">매수목표가(눌림대)</th><th class="num">현재종가</th><th class="num">추천가대비</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
 function legacyBuyCard(tk,pw,total){
   const s=DATA.stocks[tk]; if(!s) return '';
   const {sh,amt}=qtyFor(s,pw,total), hi=s.high52>0? s.close/s.high52:null;
+  const rc=(window.RECO||{})[tk];   // 추천 이력(언제·왜·얼마에)
+  const recoLine = rc ? `<div class="srow" style="background:rgba(46,194,126,.08);border-radius:5px;padding:4px 7px;margin:3px 0;flex-wrap:wrap">
+    <span class="sub">🗓 ${esc(rc.week)} 추천 (${_dmd(rc.reco_date)})</span>
+    <span class="sub">추천당시 <b>${W(rc.reco_close)}</b></span>
+    <span class="sub">매수목표 <b>${rc.target_low?W(rc.target_low)+'~'+W(rc.target_high):'—'}</b></span>
+    ${rc.ret!=null?`<b class="${rc.ret>=0?'pos':'neg'}">추천가 대비 ${P(rc.ret)}</b>`:''}</div>` : '';
   return `<div class="scard b" style="cursor:pointer" onclick="buyPopup('${tk}')"><div><span class="nm">${esc(s.name)}</span> <span class="mono">${tk}·${s.market}·${s.sector}</span></div>
-    ${miniChart(tk)}${dartBadge(tk)}
+    ${recoLine}${miniChart(tk)}${dartBadge(tk)}
     <div class="srow"><span>RS <b>${Math.round(s.rs)}</b></span><span>52주고점 <b>${Math.round(s.high52*100)}%</b></span><span>20주선 <b>${P(s.dist_wma20,0)}</b></span></div>
     <div class="srow"><span>매수가 <b>${W(s.close)}</b></span><span>추천 <b>${sh.toLocaleString()}주</b> ≈${W(amt)}</span></div>
     <div class="srow"><span>목표 <b class="pos">${hi?W(hi):'—'}</b></span><span>손절 <b class="neg">${W(s.swing20)}</b></span><span>청산 <b>+40일</b></span></div>${dartBlock(tk)}</div>`;
@@ -982,6 +1008,13 @@ function render(){
   // 종목 발굴 — 모멘텀 / TDA
   const held=new Set(pf.open.map(h=>h.ticker));
   const cbStop = cb.tripped ? `<div class="warn" style="border-left-color:#f0584c">월 손실 한도 −${(CB_LIMIT*100).toFixed(0)}% 도달 — <b>당월 신규 매수 중단</b>. 아래는 참고용이며 집행하지 마세요.</div>` : "";
+  window.RECO={}; (DATA.reco_history||[]).forEach(h=>{ RECO[h.ticker]=h; });   // 추천 이력 맵(카드·이력표 공용)
+  const rwb=document.getElementById("recoWeekBanner");
+  if(rwb){ const nA=(DATA.reco_history||[]).filter(h=>h.active).length;
+    rwb.innerHTML=`<div class="banner" style="margin:6px 0 14px"><div class="mode up-c">📅 ${esc(DATA.reco_week||'이번 주')}</div>
+      <div><div class="k">이번 주차 매수 추천</div><b>${nA}종목</b></div>
+      <div><div class="k">전략</div><b>주도주(F리더) ∩ 20주선 눌림</b></div>
+      <div class="k" style="align-self:center;max-width:320px">눌림대(20주선~+5%)에 들어온 주도주를 추천합니다. 이미 오른 종목은 카드의 <b>매수목표가</b>(눌림대)까지 기다렸다 진입하세요.</div></div>`; }
   const lb=DATA.buy_order.filter(tk=>!held.has(tk));
   document.getElementById("legacyBuy").innerHTML = cbStop + dartExcludedBlock() + (lb.length ? lb.map(tk=>legacyBuyCard(tk,pw,pf.total)).join("") : legacyEmpty(m));
   const ls=(DATA.legacy_sell||[]).filter(tk=>DATA.stocks[tk]);
@@ -990,6 +1023,7 @@ function render(){
   document.getElementById("tdaBuy").innerHTML = cbStop + (tb.length ? tb.map(tk=>tdaBuyCard(tk,pw,pf.total)).join("") : '<div class="empty">위상 안정+추세 매수 후보 없음.</div>');
   const ts=(DATA.tda_sell||[]).filter(tk=>DATA.stocks[tk]);
   document.getElementById("tdaSell").innerHTML = ts.length ? ts.map(tdaSellCard).join("") : '<div class="empty">위상 불안정 경고 종목 없음.</div>';
+  renderRecoHistory();
   const tm=DATA.tda_meta||{};
   document.getElementById("tdaBadge").textContent = tm.has_ripser ? `(H1 지속성 · 윈도 ${tm.window}일 · ${tm.n}종목)` : `(H0 강등 모드)`;
   document.getElementById("momDx").innerHTML = momNote();
