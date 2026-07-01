@@ -75,7 +75,18 @@ def main():
                     help="진입목록 CSV 경로(검증A: 신호일/진입일/종목/가정체결가)")
     ap.add_argument("--cost-add", dest="cost_add", type=float, default=0.0,
                     help="검증A: 측정 슬리피지를 왕복비용에 추가(소수, 예 0.003=+0.3%p)")
+    ap.add_argument("--dump-cands", dest="dump_cands", default=None,
+                    help="후보목록 CSV(DART 동결테이블 구축용: signal_date,ticker)")
+    ap.add_argument("--dart-table", dest="dart_table", default=None,
+                    help="PIT 동결 터미널공시 테이블 JSON {ticker:[YYYYMMDD,...]}. 해당 종목은 진입 N일 내 터미널 시 제외")
+    ap.add_argument("--dart-window", dest="dart_window", type=int, default=30,
+                    help="터미널 공시 룩백(거래일)")
     args = ap.parse_args()
+    import json as _json
+    dart_tbl = {}
+    if args.dart_table:
+        dart_tbl = {str(k).zfill(6): sorted(v) for k, v in _json.load(open(args.dart_table, encoding="utf-8")).items()}
+    cands_dump = []
     cfg = yaml.safe_load(open("config/strategy.yaml", encoding="utf-8"))
     H = cfg["holding"]["max_holding_days"]; cost = cfg["cost"]["assumed_round_trip_cost"] + args.cost_add
     cap0 = cfg["portfolio"]["initial_capital"]; maxpos = cfg["sizing"]["max_positions"]
@@ -173,8 +184,17 @@ def main():
             bo = (mg["high_52w_ratio"] >= args.bo_thr) if "high_52w_ratio" in mg.columns else pd.Series(False, index=mg.index)
             ec = pb if args.entry == "pullback" else (bo if args.entry == "breakout" else (pb | bo))
             cands = mg[mg["is_f_leader"] & ec].sort_values("rs_rank", ascending=False)
+            cand_tks = list(cands["ticker"])
+            if args.dump_cands:
+                sd = cal[i].strftime("%Y%m%d")
+                cands_dump.extend({"signal_date": sd, "ticker": tk} for tk in cand_tks)
+            if dart_tbl:                                  # 터미널 공시 종목 제외(신호일 직전 N거래일)
+                sd = cal[i].strftime("%Y%m%d")
+                lb = cal[max(0, i - args.dart_window)].strftime("%Y%m%d")
+                cand_tks = [tk for tk in cand_tks
+                            if not any(lb <= d <= sd for d in dart_tbl.get(str(tk).zfill(6), []))]
             eq_now = cash + sum(p["sh"] * (px(cls, i, tk) or p["epx"]) for tk, p in pos.items())
-            for tk in cands["ticker"]:
+            for tk in cand_tks:
                 if len(pos) >= slots: break
                 if tk in pos: continue
                 bp = fill(i, tk, True)
@@ -224,6 +244,10 @@ def main():
     if args.dump_entries:
         pd.DataFrame(entries).to_csv(args.dump_entries, index=False)
         print(f"  [진입덤프] {len(entries)}건 → {args.dump_entries}", file=sys.stderr)
+    if args.dump_cands:
+        cd = pd.DataFrame(cands_dump).drop_duplicates()
+        cd.to_csv(args.dump_cands, index=False)
+        print(f"  [후보덤프] {len(cd)}쌍 · {cd['ticker'].nunique()}고유종목 → {args.dump_cands}", file=sys.stderr)
 
 
 if __name__ == "__main__":

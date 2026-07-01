@@ -245,7 +245,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(400, {"error": "파라미터 오류"})
         if not (10000 <= cap <= 100_000_000_000):
             return self._send(400, {"error": "투자금 범위 오류"})
-        strategy = "overnight" if g("strategy", "swing") == "overnight" else "swing"
+        strategy = g("strategy", "swing")
         if strategy == "overnight":           # 단타(오버나이트): 노출 비중·게이트만
             try:
                 exposure = float(g("exposure", "0.3"))
@@ -254,6 +254,19 @@ class Handler(BaseHTTPRequestHandler):
             gate = "on" if g("gate", "off") == "on" else "off"
             cmd = [sys.executable, "-m", "app.sim.overnight_cli", "--start", start, "--end", end,
                    "--capital", str(cap), "--exposure", str(max(0.0, min(1.0, exposure))), "--gate", gate]
+        elif strategy == "index":             # 인덱스 로테이션(KOSPI/KOSDAQ 40주선 추세 + 스타일)
+            mode = g("mode", "rotation")
+            if mode not in ("rotation", "kospi_tf", "hold"):
+                mode = "rotation"
+            cmd = [sys.executable, "-m", "app.sim.index_backtest", "--start", start, "--end", end,
+                   "--capital", str(cap), "--mode", mode]
+        elif strategy == "coresat":           # 코어-위성: 코어(지수 로테이션) core_weight + 위성(active) 나머지
+            try:
+                cwt = max(0.0, min(1.0, float(g("core_weight", "0.7"))))
+            except ValueError:
+                return self._send(400, {"error": "파라미터 오류"})
+            cmd = [sys.executable, "-m", "backtest.core_satellite_backtest", "--start", start, "--end", end,
+                   "--capital", str(cap), "--core-weight", str(cwt), "--json"]
         else:
             cb_mode = "liq" if g("cb_mode", "block") == "liq" else "block"
             cmd = [sys.executable, "-m", "app.sim.backtest_cli", "--start", start, "--end", end,
@@ -313,8 +326,9 @@ class Handler(BaseHTTPRequestHandler):
             if _mode is None and cur is not None:
                 _mode = cur.get("cb_mode")
             cb_mode = "liq" if _mode == "liq" else "block"        # 청산 방식: block(신규중단) | liq(전량청산)
+            core_weight = _num("core_weight", 0.7, 0.0, 1.0)      # 코어-위성: 코어(지수 로테이션) 비중. 기본 0.7. 0=순수 active
             db.start_sim(sub, info.get("email", ""), inv, _latest_asof(),
-                         cb_limit=cb_limit, exposure_mult=exposure_mult, cb_mode=cb_mode)
+                         cb_limit=cb_limit, exposure_mult=exposure_mult, cb_mode=cb_mode, core_weight=core_weight)
             return self._send(200, db.results(sub) or {"active": True})
         except Exception as e:
             return self._send(500, {"error": str(e)})

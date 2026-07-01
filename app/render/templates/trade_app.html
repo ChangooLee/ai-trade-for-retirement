@@ -5,6 +5,7 @@
 /* LEADERS DESK — 다크 모노크롬. 블랙 메인 + 화이트 포인트. 강조는 절제된 모던 톤(적/청/앰버/에메랄드). Apple SD Gothic Neo. */
 :root{--bg:#0b0b0d;--card:#161719;--panel:#1c1d21;--line:#2a2c31;--line2:#3a3d44;--ink:#f6f7f8;--ink2:#c9ccd2;--mut:#8b8f97;--accent:#f6f7f8;--up:#f0584c;--down:#5b94f0;--buy:#2ec27e}
 *{box-sizing:border-box}
+html{overflow-x:clip}  /* 툴팁(.tip::after) 등 절대배치 요소의 팬텀 가로스크롤 차단 — clip이라 sticky 탭 안 깨짐 */
 body{margin:0;background:var(--bg);color:var(--ink);
   font:14px/1.55 "Apple SD Gothic Neo","AppleGothic",-apple-system,BlinkMacSystemFont,"Pretendard","Malgun Gothic",system-ui,sans-serif;
   -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-variant-numeric:tabular-nums}
@@ -54,6 +55,14 @@ canvas{width:100%;height:150px;display:block;background:var(--panel);border:1px 
 #searchWrap{position:relative}#search{width:230px}
 #sugg{position:absolute;top:62px;left:0;width:230px;max-height:240px;overflow:auto;background:var(--card);border:1px solid var(--line2);border-radius:8px;z-index:10;display:none;box-shadow:0 8px 24px rgba(0,0,0,.5)}
 #sugg div{padding:7px 10px;cursor:pointer;font-size:12.5px;border-bottom:1px solid var(--line)}#sugg div:hover{background:var(--panel)}
+#searchWrap2{position:relative}#asearch{width:230px;max-width:100%}
+#asugg{position:absolute;top:62px;left:0;width:230px;max-height:300px;overflow:auto;background:var(--card);border:1px solid var(--line2);border-radius:8px;z-index:10;display:none;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+#asugg div{padding:7px 10px;cursor:pointer;font-size:12.5px;border-bottom:1px solid var(--line)}#asugg div:hover{background:var(--panel)}
+.lvrow{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
+@media(max-width:560px){.lvrow{grid-template-columns:1fr}}
+.lvbox{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;text-align:center}
+.lvbox b{display:block;font-size:15px;margin:2px 0}
+.tbar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin:4px 0 10px}.tbar>div{height:100%}
 .btn{background:var(--accent);color:var(--bg);border:1px solid var(--accent);border-radius:8px;padding:9px 16px;font-weight:700;cursor:pointer;font-size:13px;font-family:inherit;letter-spacing:-.1px}
 .btn:hover{background:#dfe1e3;border-color:#dfe1e3}
 .tickwrap{display:inline-flex;align-items:stretch;gap:0}
@@ -66,6 +75,8 @@ table{width:100%;border-collapse:collapse;background:var(--card);border:1px soli
 th,td{padding:8px 11px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
 th{background:var(--panel);color:var(--mut);font-size:10.5px;font-weight:600;white-space:nowrap;text-transform:none}
 tbody tr:last-child td{border-bottom:0}
+.tblscroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tblscroll table{min-width:480px}
 td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}.empty{color:var(--mut);text-align:center;padding:22px;font-size:12.5px}
 td:last-child,th:last-child{text-align:right}
 details{margin-top:6px}summary{cursor:pointer;color:var(--ink2);font-size:12.5px}
@@ -115,6 +126,7 @@ details{margin-top:6px}summary{cursor:pointer;color:var(--ink2);font-size:12.5px
 <nav class="tabs" id="tabs">
   <button class="tab active" data-panel="portfolio">내 포트폴리오</button>
   <button class="tab" data-panel="discover">종목 발굴</button>
+  <button class="tab" data-panel="analysis">종목 분석</button>
   <button class="tab" data-panel="sim">시뮬레이터</button>
   <button class="tab" data-panel="backtest">백테스트</button>
   <button class="tab" data-panel="strategy">전략·검증</button>
@@ -137,6 +149,10 @@ details{margin-top:6px}summary{cursor:pointer;color:var(--ink2);font-size:12.5px
 <h2>내 포트폴리오 <span class="sub" style="font-weight:400" id="pfSub"></span> <span id="liveTag" class="sub" style="font-weight:400;margin-left:6px"></span></h2>
 <div class="summary-row" id="pfSummary"></div>
 <div id="cbBanner"></div>
+<div class="warn" style="border-left:3px solid #5b94f0;background:#0f1520;color:#c8ccd2">
+  🧭 <b>권장 배분: 코어 70% 인덱스 로테이션 + 위성 30% 종목</b>
+  <div class="sub" style="margin-top:4px;line-height:1.6">코어(70%)=추세 위 지수 ETF(KOSPI→KODEX 200/KOSDAQ→코스닥150, 둘 다 추세 아래면 현금), 위성(30%)=아래 보유 종목(발굴 알고리즘). 이 레짐(반도체 집중)선 인덱스 코어가 종목선택을 압도 — <b>2026 코어70/위성30 +60% vs active만 +6%</b>. 아래 보유 종목은 <b>위성(30%)</b> 관점으로 관리하세요. 발굴·시뮬 탭에서 코어-위성 자동 운용.</div>
+</div>
 <div class="warn" style="border-left-color:var(--line2);background:#15171c;color:#c8ccd2">
   <b>📋 보유 종목 분석 기준 (공통)</b>
   <div class="sub" style="margin-top:5px;line-height:1.65">
@@ -158,26 +174,17 @@ details{margin-top:6px}summary{cursor:pointer;color:var(--ink2);font-size:12.5px
 
 <section class="panel" id="panel-discover">
 <h2>종목 발굴</h2>
+<div id="marketAlloc"></div>
 <div id="recoWeekBanner"></div>
-<div class="cmp">
-  <div class="cmp-col">
-    <div class="cmp-hd legacy">모멘텀·추세 방식 · 주도주 20주선 눌림</div>
-    <div class="dx" id="momDx"></div>
-    <div class="cmp-sub buy">매수 후보 — F리더 ∩ 20주선 눌림</div>
-    <div id="legacyBuy"></div>
-    <div class="cmp-sub sell">이탈 주의 — 20주선 하향 · 모멘텀 약화</div>
-    <div id="legacySell"></div>
-  </div>
-  <div class="cmp-col">
-    <div class="cmp-hd tda">TDA 방식 · 위상수학 시장국면 <span class="sub" id="tdaBadge" style="font-weight:400"></span></div>
-    <div class="dx" id="tdaDx"></div>
-    <div class="cmp-sub buy">매수 후보 — 위상 안정 + 추세</div>
-    <div id="tdaBuy"></div>
-    <div class="cmp-sub sell">변동성 경고(참고) — 위상 불안정 (매도 트리거 아님)</div>
-    <div id="tdaSell"></div>
-  </div>
+<div class="cmp-col">
+  <div class="cmp-hd legacy">주도주 20주선 눌림 · 매수 후보</div>
+  <div class="dx" id="momDx"></div>
+  <div class="cmp-sub buy">매수 후보 — F리더 ∩ 20주선 눌림 ∩ 52주고점 근접(≥90%)</div>
+  <div id="legacyBuy"></div>
 </div>
-<div class="cmp-sub buy" style="margin-top:18px">📜 추천 이력 — 주차별 추천 종목 · 매수목표가 대비 현재 수익률</div>
+<div class="cmp-sub buy" style="margin-top:16px">👀 눌림 대기 관찰 — 강한 주도주(이미 상승) <span class="sub" style="font-weight:400">· 20주선 눌림대까지 기다렸다 진입(추격 매수 아님). 카드 클릭 시 상세 분석.</span></div>
+<div id="watchPullback"></div>
+<div class="cmp-sub buy" style="margin-top:18px">📜 추천 이력 — 지난 ~6개월 추천 전체(종목별 최근 추천) · 추천 후 40거래일 청산 실현수익률</div>
 <div id="recoHistory"></div>
 
 <h2>오버나이트 단타 <span class="sub" style="font-weight:400">(당일 종가 매수 → 익일 시가 매도 · 1박)</span></h2>
@@ -197,9 +204,16 @@ details{margin-top:6px}summary{cursor:pointer;color:var(--ink2);font-size:12.5px
 <div class="note" id="onStats"></div>
 </section>
 
+<section class="panel" id="panel-analysis">
+<h2>종목 분석 <span class="sub" style="font-weight:400">(우리 모든 방법론으로 한 종목을 진단)</span></h2>
+<div class="dxline"><span class="lab">진단</span>종목을 검색하면 <b>모멘텀·20주선 눌림·TDA 위상·재무/공시(DART)</b>를 한 번에 분석하고, <b>매수목표가(눌림대)·목표가·손절가</b>와 <b>진입 적합성 종합판정</b>을 보여줍니다. <span class="sub">가격 예측이 아니라 우리 규칙·지표 기준 사실 + 참고 레벨입니다.</span></div>
+<div class="form" style="max-width:360px;margin-bottom:8px"><div id="searchWrap2"><label>종목 검색</label><input id="asearch" placeholder="종목명 또는 코드 (예: 삼성전자, 005930)" autocomplete="off"><div id="asugg"></div></div></div>
+<div id="analysisOut" style="margin-top:14px"><div class="empty">위에서 종목을 검색해 분석을 시작하세요.</div></div>
+</section>
+
 <section class="panel" id="panel-sim">
 <h2>알고리즘 시뮬레이터 <span class="sub" style="font-weight:400">(우리 알고리즘으로 자동 페이퍼 트레이딩)</span></h2>
-<div class="dxline"><span class="lab">자동 페이퍼</span>투자금액을 넣고 <b>시작</b>하면 그날부터 <b>매일 배치</b>가 우리 알고리즘(시총 top400 F리더∩20주선 눌림 · 40거래일/20주선 청산 · D4 노출 · 월 −3% 한도)으로 자동 매매하고 손익을 누적합니다. <b>로그인 사용자만</b> 본인 서버에서 운영됩니다. 리셋하면 그날부터 다시 시작.</div>
+<div class="dxline"><span class="lab">자동 페이퍼</span>투자금액을 넣고 <b>시작</b>하면 그날부터 <b>매일 배치</b>가 <b>코어-위성</b>으로 자동 운용합니다 — <b>코어(70%)</b>=추세 위 지수 로테이션(KODEX 200/코스닥150, 둘 다 추세 아래면 현금), <b>위성(30%)</b>=발굴 종목 알고리즘(F리더∩20주선 눌림∩52주고점≥90% · 40거래일/20주선 청산 · D4 노출). 코어 비중은 시작 시 조정 가능(0=순수 active). <b>로그인 사용자만</b> 본인 서버에서 운영됩니다. 리셋하면 그날부터 다시 시작.</div>
 <div id="simSection"></div>
 </section>
 
@@ -210,14 +224,18 @@ details{margin-top:6px}summary{cursor:pointer;color:var(--ink2);font-size:12.5px
   <div><label>시작일</label><input id="btStart" type="date" value="2026-01-01" style="width:150px"></div>
   <div><label>종료일</label><input id="btEnd" type="date" value="2026-12-31" style="width:150px"></div>
   <div><label>투자금액(원)</label><input id="btCap" type="number" value="10000000" style="width:140px"></div>
-  <div><label>전략</label><select id="btStrategy" onchange="btToggleStrategy()"><option value="swing">스윙(현행)</option><option value="overnight">단타(오버나이트)</option></select></div>
-  <span id="swingParams" style="display:contents">
+  <div><label>전략</label><select id="btStrategy" onchange="btToggleStrategy()"><option value="coresat">코어-위성 70/30 (권장)</option><option value="swing">스윙(위성만)</option><option value="index">인덱스 로테이션(코어만)</option><option value="overnight">단타(오버나이트)</option></select></div>
+  <span id="coresatParams" style="display:contents">
+  <div><label title="코어=지수 로테이션, 위성=active 발굴 종목">코어 비중</label><select id="btCoreW"><option value="0.7">코어 70% / 위성 30% (권장)</option><option value="0.8">코어 80% / 위성 20%</option><option value="0.5">50 / 50</option><option value="1.0">순수 인덱스 100%</option><option value="0">순수 active 0%</option></select></div></span>
+  <span id="swingParams" style="display:none">
   <div><label>노출/레버리지</label><select id="btMult"><option value="1.0">기본 ×1.0 (무레버)</option><option value="1.5">신용 ×1.5</option><option value="2.0">신용 ×2.0 (최대)</option></select></div>
   <div><label>월 손실한도</label><select id="btCb"><option value="0.03">−3%</option><option value="0.05">−5%</option><option value="0.08">−8%</option><option value="0">끔</option></select></div>
   <div><label>한도 도달 시</label><select id="btMode"><option value="block">신규매수 중단</option><option value="liq">전량청산</option></select></div></span>
   <span id="onParams" style="display:none">
   <div><label>단타 노출</label><select id="btOnExp"><option value="0.3">30% (권장)</option><option value="0.5">50%</option><option value="1.0">100%</option></select></div>
   <div><label>Risk-Off 밤</label><select id="btGate"><option value="off">매매(권장)</option><option value="on">쉬기</option></select></div></span>
+  <span id="indexParams" style="display:none">
+  <div><label>방식</label><select id="btIdxMode"><option value="rotation">스타일 로테이션(권장)</option><option value="kospi_tf">KOSPI 추세추종</option><option value="hold">KOSPI 단순보유</option></select></div></span>
   <button class="btn" onclick="runBacktest()">백테스트 실행</button>
 </div>
 <div id="btResult"></div>
@@ -496,15 +514,22 @@ function renderSimCard(d, opts){
     banner = `<div class="warn" style="border-left-color:#e0a93b"><b>${head}</b> · 아래 수치는 <b>마지막 저장 시점 값(현재 값 아님)</b>입니다. ${when}. 로그인하면 계정의 최신 상태로 갱신됩니다.${opts.neterr?' <a href="#" onclick="renderSim();return false">다시 시도</a>':''}</div>`;
   }
   const lbl = ro ? "<span class='sub'>(마지막 저장)</span>" : "";
-  // 시뮬 보유 종목을 포트폴리오와 동일한 보유 카드로(읽기전용 — 시뮬은 서버 배치가 자동 운용)
-  const simPos=(d.positions||[]).map(enrichHolding);
-  const eqTot=d.equity||(simPos.reduce((a,x)=>a+(x.value||0),0)+(d.cash||0));
+  // 코어(지수 로테이션)/위성(active 종목) 분리. 코어-위성 모드면 코어 별도 표시.
+  const coreP=(d.positions||[]).find(p=>p.core);
+  const isCS=(d.core_weight||0)>0;
+  const coreVal=coreP?coreP.shares*(coreP.last_price||coreP.entry_price||0):0;
+  const simPos=(d.positions||[]).filter(p=>!p.core).map(enrichHolding);
+  const eqTot=d.equity||(simPos.reduce((a,x)=>a+(x.value||0),0)+coreVal+(d.cash||0));
   simPos.forEach(x=>x.weight=eqTot>0?x.value/eqTot:0);
+  const coreHtml = isCS ? `<div class="cmp-sub" style="margin-top:10px">🧭 코어 · 지수 로테이션 (목표 ${Math.round((d.core_weight||0.7)*100)}%)</div>`+
+      (coreP ? `<div class="dxline"><b>${esc(coreP.name||coreP.index||'코어')}</b> · 평가 <b>${W(coreVal)}</b> · 현재 비중 <b>${eqTot>0?Math.round(coreVal/eqTot*100):0}%</b></div>`
+             : `<div class="dxline"><b>현금 방어</b> — 두 지수 모두 40주선 아래(코어 미보유)</div>`) : "";
+  const satLabel = isCS ? "위성 종목 (active)" : "시뮬 보유 종목";
   const simHoldsHtml = simPos.length
-    ? `<div class="cmp-sub" style="margin-top:10px">시뮬 보유 종목 (${simPos.length})</div><div class="cards">${simPos.map(h=>holdCardHTML(h,{sim:true})).join("")}</div>`
-    : `<div class="empty" style="margin-top:8px">시뮬 보유 종목 없음(현금 보유 중) — 다음 거래일 배치에서 매수 신호 시 편입됩니다.</div>`;
+    ? `<div class="cmp-sub" style="margin-top:10px">${satLabel} (${simPos.length})</div><div class="cards">${simPos.map(h=>holdCardHTML(h,{sim:true})).join("")}</div>`
+    : `<div class="empty" style="margin-top:8px">${isCS?'위성':'시뮬 보유'} 종목 없음(현금) — 다음 거래일 배치에서 매수 신호 시 편입됩니다.</div>`;
   el.innerHTML=`<div class="card">
-    <div class="hd"><b>운영 중</b> <span class="mono">시작 ${d.start_date} · 최근처리 ${d.last_processed||'대기'} · ${days}거래일 · 공격성 ${aggr}(×${d.exposure_mult}) · 한도 ${d.cb_limit>0?'−'+Math.round(d.cb_limit*100)+'%'+((d.cb_mode||'block')==='liq'?' 전량청산':' 신규중단'):'끔'}${acct}</span>
+    <div class="hd"><b>운영 중</b> <span class="mono">시작 ${d.start_date} · 최근처리 ${d.last_processed||'대기'} · ${days}거래일${isCS?` · <b style="color:#5b94f0">코어 ${Math.round((d.core_weight||0.7)*100)}%</b>`:''} · 공격성 ${aggr}(×${d.exposure_mult}) · 한도 ${d.cb_limit>0?'−'+Math.round(d.cb_limit*100)+'%'+((d.cb_mode||'block')==='liq'?' 전량청산':' 신규중단'):'끔'}${acct}</span>
       ${ctrl}</div>
     ${banner}
     <div class="summary-row">
@@ -512,8 +537,8 @@ function renderSimCard(d, opts){
       <div>총손익${lbl}<b class="${cls}">${W(d.total_pnl)} (${P(d.total_ret)})</b></div>
       <div>실현손익<b class="${d.realized_pnl>=0?'pos':'neg'}">${W(d.realized_pnl)}</b></div>
       <div>체결<b>${d.n_trades}건 · 승률 ${Math.round((d.win_rate||0)*100)}%</b></div>
-      <div>보유<b>${d.n_positions}종목 · 현금 ${W(d.cash)}</b></div></div>
-    ${simHoldsHtml}
+      <div>보유<b>${isCS?'위성 ':''}${simPos.length}종목 · 현금 ${W(d.cash)}</b></div></div>
+    ${coreHtml}${simHoldsHtml}
     <canvas id="simChart" style="width:100%;height:120px;margin-top:8px"></canvas>
     ${(d.trades&&d.trades.length)?`<div style="margin-top:8px"><b class="sub">최근 체결</b><table><thead><tr><th>종목</th><th>진입→청산</th><th class="num">손익</th><th class="num">수익률</th><th>사유</th></tr></thead><tbody>`+
       d.trades.slice(0,12).map(t=>`<tr><td><b>${esc(t.name||t.ticker)}</b></td><td>${t.entry_date}→${t.exit_date}</td><td class="num ${t.pnl>=0?'pos':'neg'}">${W(t.pnl)}</td><td class="num ${t.ret>=0?'pos':'neg'}">${P(t.ret)}</td><td class="sub">${esc(t.reason||'')}</td></tr>`).join("")+
@@ -530,10 +555,12 @@ function drawSimChart(curve, inv, cid){
   ctx.strokeStyle = ys[ys.length-1]>=inv?"#34c77b":"#f0584c"; ctx.lineWidth=1.6; ctx.beginPath();
   curve.forEach((p,i)=>{ const x=X(i),y=Y(p.equity); i?ctx.lineTo(x,y):ctx.moveTo(x,y); }); ctx.stroke();
 }
-function btToggleStrategy(){   // 전략에 따라 파라미터 묶음 토글(스윙 노출/한도 vs 단타 노출/게이트)
-  const ov=document.getElementById("btStrategy").value==="overnight";
-  document.getElementById("swingParams").style.display = ov?"none":"contents";
-  document.getElementById("onParams").style.display = ov?"contents":"none";
+function btToggleStrategy(){   // 전략에 따라 파라미터 묶음 토글(스윙/인덱스/단타)
+  const v=document.getElementById("btStrategy").value;
+  document.getElementById("coresatParams").style.display = v==="coresat"?"contents":"none";
+  document.getElementById("swingParams").style.display = v==="swing"?"contents":"none";
+  document.getElementById("onParams").style.display = v==="overnight"?"contents":"none";
+  document.getElementById("indexParams").style.display = v==="index"?"contents":"none";
 }
 window.runBacktest=async ()=>{
   const el=document.getElementById("btResult");
@@ -543,9 +570,15 @@ window.runBacktest=async ()=>{
   if(!start||!end||start>=end){ alert("시작일이 종료일보다 빨라야 합니다."); return; }
   el.innerHTML='<div class="note">백테스트 실행 중… (몇 초 소요)</div>';
   let q;
-  if(strat==="overnight"){
+  if(strat==="coresat"){
+    const cw=document.getElementById("btCoreW").value;
+    q=`?strategy=coresat&start=${start}&end=${end}&capital=${cap}&core_weight=${cw}`;
+  } else if(strat==="overnight"){
     const exp=document.getElementById("btOnExp").value, gate=document.getElementById("btGate").value;
     q=`?strategy=overnight&start=${start}&end=${end}&capital=${cap}&exposure=${exp}&gate=${gate}`;
+  } else if(strat==="index"){
+    const mode=document.getElementById("btIdxMode").value;
+    q=`?strategy=index&start=${start}&end=${end}&capital=${cap}&mode=${mode}`;
   } else {
     const mult=document.getElementById("btMult").value, cb=document.getElementById("btCb").value, mode=document.getElementById("btMode").value;
     q=`?start=${start}&end=${end}&capital=${cap}&exposure_mult=${mult}&cb_limit=${cb}&cb_mode=${mode}`;
@@ -554,13 +587,21 @@ window.runBacktest=async ()=>{
     const r=await fetch("/trading/api/backtest"+q);
     const d=await r.json();
     if(!r.ok||d.error){ el.innerHTML=`<div class="warn">백테스트 실패: ${esc(d.error||('HTTP '+r.status))}</div>`; return; }
-    const s=d.summary, cls=s.total_pnl>=0?'pos':'neg', ov=s.strategy==="overnight";
+    const s=d.summary, cls=s.total_pnl>=0?'pos':'neg', ov=s.strategy==="overnight", idx=s.strategy==="index", cs=s.strategy==="coresat";
+    const idxModeLbl={rotation:'스타일 로테이션',kospi_tf:'KOSPI 추세추종',hold:'KOSPI 단순보유'}[s.mode]||s.mode;
     const setLine = ov
       ? `단타 · 노출 ${Math.round(s.exposure*100)}% · ${s.gate?'Risk-Off 쉬기':'모든 밤'} · 매매 ${s.trade_nights}박`
+      : cs
+      ? `${esc(s.note||'코어-위성')} · CAGR ${P(s.cagr)} · Sharpe ${s.sharpe}`
+      : idx
+      ? `인덱스 · ${idxModeLbl} · CAGR ${P(s.cagr)} · Sharpe ${s.sharpe}`
       : `노출 ×${s.exposure_mult} · 한도 ${s.cb_limit>0?'−'+Math.round(s.cb_limit*100)+'%':'끔'}${s.cb_limit>0?(s.cb_mode==='liq'?' 전량청산':' 신규중단'):''}`;
     const tbl = ov
       ? `<table><thead><tr><th>종목</th><th>밤</th><th class="num">1박 수익률</th><th class="num">손익</th></tr></thead><tbody>`+
         d.trades.map(t=>`<tr><td><b>${esc(t.name||t.ticker)}</b> <span class="mono">${t.ticker}</span></td><td>${t.entry_date}</td><td class="num ${t.ret>=0?'pos':'neg'}">${P(t.ret)}</td><td class="num ${t.pnl>=0?'pos':'neg'}">${W(t.pnl)}</td></tr>`).join("")+`</tbody></table>`
+      : (idx||cs)
+      ? `<table><thead><tr><th>${cs?'코어 보유 지수':'보유 지수'}</th><th>기간</th><th class="num">구간 수익률</th><th>전환 사유</th></tr></thead><tbody>`+
+        d.trades.map(t=>`<tr><td><b>${esc(t.name)}</b></td><td>${t.entry_date}→${t.exit_date}</td><td class="num ${t.ret>=0?'pos':'neg'}">${P(t.ret)}</td><td class="sub">${esc(t.reason||'')}</td></tr>`).join("")+`</tbody></table>`
       : `<table><thead><tr><th>종목</th><th>진입→청산</th><th class="num">매수→매도가</th><th class="num">수량</th><th class="num">손익</th><th class="num">수익률</th><th>사유</th></tr></thead><tbody>`+
         d.trades.map(t=>`<tr><td><b>${esc(t.name||t.ticker)}</b> <span class="mono">${t.ticker}</span></td><td>${t.entry_date}→${t.exit_date}</td><td class="num">${W(t.entry_price)}→${W(t.exit_price)}</td><td class="num">${t.shares}주</td><td class="num ${t.pnl>=0?'pos':'neg'}">${W(t.pnl)}</td><td class="num ${t.ret>=0?'pos':'neg'}">${P(t.ret)}</td><td class="sub">${esc(t.reason||'')}</td></tr>`).join("")+`</tbody></table>`;
     el.innerHTML=`<div class="card">
@@ -572,7 +613,7 @@ window.runBacktest=async ()=>{
       ${(s.peak_leverage>1.05||s.margin_calls>0)?`<div class="warn" style="border-left-color:#e0a93b;margin-top:6px"><b>레버리지 사용</b> — 최대 ${s.peak_leverage}x · 마진이자 ${W(s.margin_interest)} · <b class="${s.margin_calls>0?'neg':''}">마진콜 ${s.margin_calls}회</b>. ★레버리지는 백테스트상 수익은 비슷·낮고 MDD만 ~2배(위험조정 열위) — 무레버 ×1.0과 비교해 보세요.★</div>`:''}
       <canvas id="btChart" style="width:100%;height:130px;margin-top:8px"></canvas>
       ${s.n_trades?`<div style="margin-top:8px"><b class="sub">체결 내역${s.n_trades>200?' (최근 200건)':''}</b>`+tbl+`</div>`:'<div class="sub" style="margin-top:6px">체결 없음(기간이 짧거나 신호 없음).</div>'}
-      ${ov?'<div class="sub" style="margin-top:6px">단타는 얇은 엣지(중앙값은 비용 미달)이며 100% 운용 시 낙폭이 큽니다 — 총자산 30% 이하 권장. 생존편향 유니버스라 절대수치는 낙관적.</div>':''}</div>`;
+      ${ov?'<div class="sub" style="margin-top:6px">단타는 얇은 엣지(중앙값은 비용 미달)이며 100% 운용 시 낙폭이 큽니다 — 총자산 30% 이하 권장. 생존편향 유니버스라 절대수치는 낙관적.</div>':''}${idx?'<div class="sub" style="margin-top:6px">인덱스 로테이션(KOSPI/KOSDAQ 40주선 추세 + 13주 상대강도). 검증(생존편향제거 2017~2026)상 이 레짐선 active 종목선택을 압도(Sharpe 0.80~0.84). 체결내역 = 보유 지수 로테이션 구간. 지수 수익률만 반영(배당·ETF 보수 제외).</div>':''}${cs?'<div class="sub" style="margin-top:6px">코어-위성 = 코어(지수 로테이션) + 위성(active 발굴) 주간 리밸런스 블렌드. 체결내역은 <b>코어 로테이션 구간</b>만 표시(위성은 발굴 알고리즘 매매). ★위성(active) 다리는 아카이브 기반이라 <b>전체기간 수치는 생존편향으로 낙관적</b> — 신뢰 구간은 최근(2026). 코어는 지수 수익률만(배당·ETF 보수 제외).</div>':''}</div>`;
     drawSimChart(d.equity_curve||[], s.capital, "btChart");
   }catch(e){ el.innerHTML=`<div class="warn">백테스트 오류: ${esc(""+e)}</div>`; }
 };
@@ -581,17 +622,19 @@ window.simStartForm=function(prefill, otherAcct){
   const d = (prefill && simData) ? simData : null;
   const inv = d ? d.investment : (DATA.initial_capital||10000000);
   const mult = d ? d.exposure_mult : 1.0, cb = d ? d.cb_limit : 0.03, mode = d ? (d.cb_mode||"block") : "block";
+  const cw = (d && d.core_weight!=null) ? d.core_weight : 0.7;
   const opt=(v,cur,lab)=>`<option value="${v}" ${(+cur===+v)?'selected':''}>${lab}</option>`;
   const sopt=(v,cur,lab)=>`<option value="${v}" ${cur===v?'selected':''}>${lab}</option>`;
   const otherNote = otherAcct ? `<div class="warn" style="border-left-color:#e0a93b"><b>다른 계정(${esc(otherAcct)})에 진행 중인 시뮬레이터</b>가 있습니다. 그 시뮬을 보려면 우측 상단에서 해당 구글 계정으로 로그인하세요. 시뮬레이터는 <b>구글 계정별로</b> 저장됩니다.</div>` : "";
   el.innerHTML=`<div class="card">${otherNote}<div class="hd"><b>시뮬레이션 ${d?'설정 변경·재시작':'시작'} · 공격성 설정</b>${d?' <span class="sub">시작 시 기존 시뮬 기록 초기화</span>':''}</div>
     <div class="srow" style="gap:10px;align-items:center;flex-wrap:wrap">
       <label>투자금액(원)</label><input id="simInv" type="number" value="${Math.round(inv)}" style="width:140px">
-      <label>노출/레버리지</label><select id="simMult">${opt(1.0,mult,"기본 ×1.0 (무레버)")}${opt(1.5,mult,"신용 ×1.5")}${opt(2.0,mult,"신용 ×2.0 (최대)")}</select>
-      <label>월 손실한도</label><select id="simCb">${opt(0.03,cb,"−3% (권장)")}${opt(0.05,cb,"−5%")}${opt(0.08,cb,"−8%")}${opt(0,cb,"끔")}</select>
+      <label title="코어=추세 위 지수 로테이션(KODEX 200/코스닥150), 위성=발굴 종목(active)">코어 비중</label><select id="simCore">${opt(0.7,cw,"코어 70% / 위성 30% (권장)")}${opt(0.8,cw,"코어 80% / 위성 20%")}${opt(0.5,cw,"50 / 50")}${opt(1.0,cw,"순수 인덱스 100%")}${opt(0,cw,"순수 active 0% (코어 없음)")}</select>
+      <label>노출/레버리지<span class="sub" style="font-weight:400"> (위성)</span></label><select id="simMult">${opt(1.0,mult,"기본 ×1.0 (무레버)")}${opt(1.5,mult,"신용 ×1.5")}${opt(2.0,mult,"신용 ×2.0 (최대)")}</select>
+      <label>월 손실한도<span class="sub" style="font-weight:400"> (위성)</span></label><select id="simCb">${opt(0.03,cb,"−3% (권장)")}${opt(0.05,cb,"−5%")}${opt(0.08,cb,"−8%")}${opt(0,cb,"끔")}</select>
       <label>한도 도달 시</label><select id="simMode">${sopt("block",mode,"신규매수 중단 (기본)")}${sopt("liq",mode,"전량청산")}</select>
       <button class="btn" style="background:#f6f7f8;border-color:#5b94f0" onclick="simStart()">시작</button>${d?' <a href="#" class="sub" style="color:#8b8f97" onclick="renderSim();return false">취소</a>':''}</div>
-    <div class="sub" style="margin-top:6px"><b>×1.0 초과 = 신용융자(레버리지)</b> — D4 노출이 100%를 넘는 리스크온에서만 차입 발동(연 7% 이자·유지증거금 30% 마진콜). ★엔진 백테스트(2017~2026): 레버리지는 <b>수익은 비슷하거나 낮고 MDD만 ~2배</b>(2x MDD −56% vs 1x −31%) — 위험조정 열위. 모멘텀 수익이 이자를 살짝 넘는 수준이라 변동성세가 이득을 상쇄.★ 손실한도: <b>신규중단</b>(보유 유지)이 <b>전량청산</b>보다 수익↑·MDD 비슷(양분할 검증). 기본=무레버·−3%·신규중단. <b>백테스트 탭에서 직접 비교</b>(과거치·미래 보장 아님).</div></div>`;
+    <div class="sub" style="margin-top:6px"><b>코어-위성</b> — 코어(70%)=추세 위 지수 로테이션(KOSPI→KODEX 200/KOSDAQ→코스닥150, 둘 다 추세 아래면 현금), 위성(30%)=발굴 종목(active). 검증(생존편향 최소 2026): 코어70/위성30 <b>+60%</b> vs 순수 active +6%. 이 레짐선 인덱스 코어가 우위, 위성은 저변 확대 대비. 노출/레버리지·손실한도는 <b>위성에만</b> 적용. <b>×1.0 초과 = 신용융자(레버리지)</b> — D4 노출이 100%를 넘는 리스크온에서만 차입 발동(연 7% 이자·유지증거금 30% 마진콜). ★엔진 백테스트(2017~2026): 레버리지는 <b>수익은 비슷하거나 낮고 MDD만 ~2배</b>(2x MDD −56% vs 1x −31%) — 위험조정 열위. 모멘텀 수익이 이자를 살짝 넘는 수준이라 변동성세가 이득을 상쇄.★ 손실한도: <b>신규중단</b>(보유 유지)이 <b>전량청산</b>보다 수익↑·MDD 비슷(양분할 검증). 기본=무레버·−3%·신규중단. <b>백테스트 탭에서 직접 비교</b>(과거치·미래 보장 아님).</div></div>`;
 };
 window.simStart=async ()=>{
   const inv=+(document.getElementById("simInv").value||0);
@@ -599,7 +642,8 @@ window.simStart=async ()=>{
   const exposure_mult=+(document.getElementById("simMult").value||1);
   const cb_limit=+(document.getElementById("simCb").value||0.03);
   const cb_mode=document.getElementById("simMode").value||"block";
-  try{ const r=await fetch(SIM_API+"/start",{method:"POST",headers:{Authorization:"Bearer "+idToken,"Content-Type":"application/json"},body:JSON.stringify({investment:inv,exposure_mult,cb_limit,cb_mode})});
+  const ce=document.getElementById("simCore"); const core_weight = ce? +ce.value : 0.7;
+  try{ const r=await fetch(SIM_API+"/start",{method:"POST",headers:{Authorization:"Bearer "+idToken,"Content-Type":"application/json"},body:JSON.stringify({investment:inv,exposure_mult,cb_limit,cb_mode,core_weight})});
     if(r.status===401){ clearSession(); alert("다시 로그인해주세요."); return; }
     if(!r.ok){ alert("시작 실패 ("+r.status+")"); return; }
     simData=await r.json(); renderSim();
@@ -817,6 +861,13 @@ function drawChart(cv, daily){
     ctx.globalAlpha=.4;ctx.fillRect(x-bw/2,VY(d[4]),bw,H0-VY(d[4]));ctx.globalAlpha=1;});
   [[5,"#34c77b"],[20,"#e0a93b"],[60,"#8b8f97"]].forEach(([p,c])=>{const m=ma(closes,p);ctx.strokeStyle=c;ctx.lineWidth=1.1;ctx.beginPath();let st=false;
     m.forEach((v,i)=>{if(v==null)return;if(!st){ctx.moveTo(X(i),Y(v));st=true;}else ctx.lineTo(X(i),Y(v));});ctx.stroke();});
+  // 분석 탭: 참고 레벨 수평선(data-levels 있을 때만 — 목표=초록/손절=빨강/눌림=노랑 점선)
+  let _lv=null; try{ _lv=cv.dataset.levels?JSON.parse(cv.dataset.levels):null; }catch(e){}
+  if(_lv){ ctx.save(); ctx.setLineDash([4,3]); ctx.lineWidth=1; ctx.font="9px sans-serif"; ctx.textBaseline="bottom";
+    [["목표",_lv.target,"#34c77b"],["손절",_lv.stop,"#f0584c"],["눌림",_lv.entry,"#e0a93b"]].forEach(([lab,val,c])=>{
+      if(val==null||val<lo||val>hi) return; const y=Y(val); ctx.strokeStyle=c; ctx.beginPath();ctx.moveTo(pl,y);ctx.lineTo(W0-pr,y);ctx.stroke();
+      ctx.fillStyle=c; ctx.fillText(lab+" "+Math.round(val).toLocaleString(),pl+2,y-1); });
+    ctx.restore(); }
 }
 function chartBlock(tk){return `<div class="cl">일봉 · MA<b style="color:#34c77b">5</b><b style="color:#e0a93b">20</b><b style="color:#8b8f97">60</b> · 거래량</div><canvas data-tk="${tk}"></canvas>`;}
 
@@ -873,18 +924,79 @@ function renderRecoHistory(){
   const el=document.getElementById("recoHistory"); if(!el) return;
   const hist=(DATA.reco_history||[]);
   if(!hist.length){ el.innerHTML='<div class="empty">아직 추천 이력이 없습니다 — 매 배치(일 2회)에서 누적됩니다.</div>'; return; }
-  const rows=hist.slice(0,80).map(h=>{
-    const ret=h.ret, retCls=ret==null?'':(ret>=0?'pos':'neg');
-    const cur=h.cur_close, curCls=(cur!=null&&h.reco_close!=null)?(cur>=h.reco_close?'pos':'neg'):'';
-    const st=h.active?'<span class="pill buy" style="font-size:9px;padding:1px 5px">추천중</span>':'<span class="sub">과거</span>';
-    return `<tr><td class="sub">${esc(h.week||'')}<br><span class="sub">${_dmd(h.reco_date)}</span></td>
-      <td><b>${esc(h.name||h.ticker)}</b> <span class="mono">${h.ticker}</span> ${st}<br><span class="sub">${esc(h.reason||'')}</span></td>
+  // 요약 — 청산(추천 후 40거래일 보유 완료) 종목 기준 실현 성과
+  const closed=hist.filter(h=>h.status==='청산'&&h.ret_hold!=null);
+  const nc=closed.length, avg=nc?closed.reduce((a,h)=>a+h.ret_hold,0)/nc:null, win=nc?closed.filter(h=>h.ret_hold>0).length/nc:null;
+  const summary=`<div class="dxline"><span class="lab">추천 성과</span>지난 ~6개월 <b>${hist.length}종목</b> 추천 · 청산 ${nc}종목 기준 평균 <b class="${avg!=null&&avg>=0?'pos':'neg'}">${avg!=null?P(avg):'—'}</b> · 승률 <b>${win!=null?Math.round(win*100)+'%':'—'}</b> <span class="sub">(청산 = 추천 후 40거래일 또는 20주선 이탈 중 먼저 — 우리 청산 규칙. 보유중·추천중은 미실현이라 요약 제외. 월 −3% 서킷브레이커·비용은 미반영한 단순 합산.)</span></div>`;
+  const rows=hist.slice(0,150).map(h=>{
+    const rh=h.ret_hold, cls=rh==null?'':(rh>=0?'pos':'neg');
+    const st=h.status==='추천중'?'<span class="pill buy" style="font-size:9px;padding:1px 5px">추천중</span>'
+            :h.status==='보유중'?'<span class="pill imm" style="font-size:9px;padding:1px 5px">보유중</span>'
+            :h.status==='데이터종료'?'<span class="pill" style="font-size:9px;padding:1px 5px;background:#3a1a1a;color:#e08b8b">데이터종료</span>'
+            :'<span class="sub">청산</span>';
+    // 재추천 배지 + 매도신호 없음 표시
+    const reReco = (h.n_episodes>1) ? ` <span class="pill" style="font-size:9px;padding:1px 5px;background:#2a2352;color:#c9b8ff" title="첫 추천 ${_dmd(h.first_reco_date)} 이후 재추천된 횟수">재추천 ${h.n_episodes}회 · 첫 ${_dmd(h.first_reco_date)}</span>` : '';
+    const hd=h.hold_days||40;
+    const noSell = (h.held_continuous===true) ? ` <span class="pill" style="font-size:9px;padding:1px 5px;background:#12331f;color:#7fd6a0" title="아직 보유 중 — 40거래일차 시간청산 또는 20주선 이탈 중 먼저 도달 시 매도(청산). 지금까지는 둘 다 없어 보유 지속.">보유 ${h.held_days!=null?h.held_days:'?'}/${hd}거래일</span>` : '';
+    const watch = (h.held_continuous===true && h.active===false) ? ` <span class="pill" style="font-size:9px;padding:1px 5px;background:#2b2b2b;color:#b8bcc4" title="20주선 이탈은 없어 첫 추천분 보유 지속이나, 현재 신규 매수 추천 대상은 아님(관망)">관망 · 추천이탈</span>` : '';
+    const staleMk = h.data_stale ? ` <span class="pill" style="font-size:9px;padding:1px 5px;background:#3a1a1a;color:#e08b8b" title="이후 유니버스에서 빠져(이탈/상폐 가능) 가격 추적이 끊김 — 수익은 마지막 확인가 기준(불완전)">⚠ 추적 끊김</span>` : '';
+    const retCell = h.data_stale ? `<span class="sub">≈${rh!=null?P(rh):'—'} <span style="color:#e08b8b">(끊김)</span></span>` : `<b>${rh!=null?P(rh):'—'}</b>`;
+    const exitLab = h.status==='청산'?_dmd(h.exit_date)+(h.exit_reason==='40거래일'?' 40일':' 이탈'):(h.data_stale?'마지막가':'현재');
+    const main=`<tr><td class="sub">${esc(h.week||'')}<br><span class="sub">${_dmd(h.reco_date)}</span></td>
+      <td><b>${esc(h.name||h.ticker)}</b> <span class="mono">${h.ticker}</span> ${st}${reReco}${noSell}${watch}${staleMk}</td>
       <td class="num">${W(h.reco_close)}</td>
-      <td class="num sub">${h.target_low?W(h.target_low)+'~'+W(h.target_high):'—'}</td>
-      <td class="num ${curCls}">${cur!=null?W(cur):'—'}</td>
-      <td class="num ${retCls}"><b>${ret!=null?P(ret):'—'}</b></td></tr>`;
+      <td class="num">${h.exit_close!=null?W(h.exit_close):'—'}<br><span class="sub">${exitLab}</span></td>
+      <td class="num ${h.data_stale?'':cls}">${retCell}</td></tr>`;
+    // 재추천 종목: 회차별 '그날 샀으면' 수익 병렬 표시(서브행)
+    let subrow='';
+    if(h.n_episodes>1 && h.episodes && h.episodes.length){
+      const eps=h.episodes.map((e,i)=>{
+        const ec=e.ret_hold>=0?'pos':'neg';
+        const rv=e.ret_hold!=null?((e.stale?'≈':'')+P(e.ret_hold)):'—';
+        return `<span style="white-space:nowrap">${i+1}차 ${_dmd(e.reco_date)} ${W(e.reco_close)} → <b class="${e.stale?'':ec}">${rv}</b> <span class="sub">${e.status==='청산'?('청산'+(e.exit_reason==='40거래일'?'(40일)':'(이탈)')):e.status}</span></span>`;
+      }).join(' &nbsp;·&nbsp; ');
+      subrow=`<tr><td></td><td colspan="4" style="padding-top:2px"><span class="sub"><b>회차별 수익</b>(각 추천일 매수 가정 · 겹치는 보유구간의 독립 시나리오, 합산 아님): </span>${eps}</td></tr>`;
+    }
+    return main+subrow;
   }).join("");
-  el.innerHTML=`<table><thead><tr><th>추천주차</th><th>종목 · 사유</th><th class="num">추천당시가</th><th class="num">매수목표가(눌림대)</th><th class="num">현재종가</th><th class="num">추천가대비</th></tr></thead><tbody>${rows}</tbody></table>`;
+  el.innerHTML=summary+`<div class="sub" style="margin:4px 0 6px">※ 같은 종목이 여러 번 추천되면 <b>재추천 N회</b> 배지 + <b>회차별 매수 시 수익</b>(겹치는 보유구간의 독립 시나리오, 합산 아님)을 병렬 표시합니다. <b>보유 N/40거래일</b> = 아직 청산 전(40거래일 시간청산 또는 20주선 이탈 중 먼저 도달 시 매도 — 헤더 수익은 <b>미실현</b> 현재가 기준). <b>관망·추천이탈</b> = 20주선 이탈은 없어 보유는 지속이나 현재 신규추천 대상 아님. <b>⚠ 추적 끊김</b> = 이후 유니버스 이탈(상폐 가능)로 가격 추적이 끊겨 수익이 불완전(≈ 표기). 표시 수익은 <b>비용·세금 차감 전(gross)</b>이며, 아카이브가 현재 상장 종목 기준이라 생존편향으로 낙관적입니다.</div><div class="tblscroll"><table><thead><tr><th>추천주차</th><th>종목</th><th class="num">추천당시가</th><th class="num">40일청산/현재</th><th class="num">수익률</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+// 시장 배분(1순위) — 인덱스 추세추종 + 스타일. 검증상 이 레짐선 지수배분이 종목선택 압도.
+function renderMarketAlloc(){
+  const el=document.getElementById("marketAlloc"); if(!el) return;
+  const m=DATA.market_alloc; if(!m||!m.KOSPI){ el.innerHTML=""; return; }
+  const cell=(mk)=>{const v=m[mk]; if(!v) return ""; const on=v.above_trend;
+    return `<div><div class="k">${mk}</div><b class="${on?'pos':'neg'}">${on?'추세 위':'추세 아래'}</b><br><span class="sub">40주선 ${v.trend_pct>=0?'+':''}${(v.trend_pct*100).toFixed(1)}% · 13주 ${v.mom13>=0?'+':''}${(v.mom13*100).toFixed(1)}%</span></div>`;};
+  const etf={KOSPI:'KODEX 200 (069500)',KOSDAQ:'KODEX 코스닥150 (229200)'};
+  const coreTxt = m.lead ? `<b class="pos">${etf[m.lead]}</b>` : `<b>현금</b>(두 지수 추세 이탈)`;
+  el.innerHTML=`<div class="banner" style="margin:6px 0 14px;border-left:3px solid var(--buy);background:#0f1a12">
+    <div class="mode up-c">🧭 코어-위성 배분 (1순위)</div>
+    ${cell('KOSPI')}${cell('KOSDAQ')}
+    <div class="k" style="align-self:center;max-width:380px">
+      <b>코어 70%: ${coreTxt}</b> · 위성 30%: 아래 발굴 종목<br>
+      <span class="sub">${esc(m.guide||'')} 검증: 이 레짐(반도체 집중)선 인덱스 추세추종이 종목선택 압도 — 2026 코어70/위성30 <b>+60%</b> vs active만 +6%. 저변 확대 시 위성(active) 부활 대비.</span></div></div>`;
+}
+// 관찰 카드 클릭 → 분석 탭으로 점프
+function watchOpen(tk){ activateTab('analysis'); const nm=(DATA.stocks[tk]||{}).name||tk;
+  const ae=document.getElementById('asearch'); if(ae) ae.value=nm+' ('+tk+')'; try{ renderAnalysis(tk); }catch(e){} }
+// 눌림 대기 관찰 — F리더(이미 20주선 위로 상승)들. 추격 대신 눌림대까지 기다렸다 진입. 눌림대 근접순.
+function renderWatchPullback(){
+  const el=document.getElementById("watchPullback"); if(!el) return;
+  const buy=new Set(DATA.buy_order||[]), held=new Set(holdings.map(h=>h.ticker));
+  const arr=Object.entries(DATA.stocks)
+    .filter(([tk,s])=>s.leader && s.wma20 && !buy.has(tk) && !held.has(tk))
+    .map(([tk,s])=>{const cur=(meta(tk).cur||s.close); return {tk,s,cur,cush:cur/s.wma20-1};})
+    .sort((a,b)=>a.cush-b.cush).slice(0,24);
+  if(!arr.length){ el.innerHTML='<div class="empty">현재 관찰 대상(주도주) 없음 — 강세 종목이 나오면 채워집니다.</div>'; return; }
+  el.innerHTML='<div class="cards">'+arr.map(({tk,s,cur,cush})=>{
+    const lo=s.wma20, hi=s.wma20*1.05, hi52=(s.high52>0)?cur/s.high52:null, live=LIVE[tk]!=null?' <span class="sub" style="color:var(--up)">●</span>':'';
+    return `<div class="card" style="cursor:pointer" onclick="watchOpen('${tk}')">
+      <div class="hd"><b>${esc(s.name||tk)}</b> <span class="mono">${tk}·${s.market||''}</span> <span class="pill hold">RS ${Math.round(s.rs||0)}</span></div>
+      <div class="plan">
+        <div>현재가 <b>${W(cur)}</b>${live} <span class="sub">20주선 +${(cush*100).toFixed(0)}% 위(이미 상승)</span></div>
+        <div>매수목표가(눌림대) <b class="pos">${W(lo)}~${W(hi)}</b> <span class="sub">진입가 현 ${((lo/cur-1)*100).toFixed(0)}%</span></div>
+        ${hi52?`<div>52주 고점 <b>${W(hi52)}</b> <span class="sub">현 ${((hi52/cur-1)*100).toFixed(0)}%</span></div>`:''}</div></div>`;
+  }).join('')+'</div>';
 }
 function legacyBuyCard(tk,pw,total){
   const s=DATA.stocks[tk]; if(!s) return '';
@@ -949,12 +1061,12 @@ function regimeNote(){
 }
 function momNote(){
   const st=Object.values(DATA.stocks), nL=st.filter(s=>s.leader).length;
-  const nB=(DATA.buy_order||[]).length, nS=(DATA.legacy_sell||[]).length;
+  const nB=(DATA.buy_order||[]).length;
   let s;
   if(nB>0) s=pick([`주도주 ${nL}개 중 <b>${nB}개가 20주선 눌림</b> — 진입 후보 포착.`,`눌림 진입 신호 <b>${nB}건</b> — 리더 ${nL}개 중 선별.`],2);
   else if(nL>0) s=pick([`주도주 <b>${nL}개</b>가 모두 추세 위(미눌림) — 진입 대기.`,`리더 ${nL}개는 강세 지속, 눌림 자리 없음 — 관망.`],2);
   else s=pick(["리더 조건 충족 종목 없음 — 관망 국면.","현재 주도주 부재 — 신규 진입 보류."],2);
-  return s+(nS?` 20주선 이탈 ${nS}개 주의.`:"");
+  return s;
 }
 function tdaDxNote(){
   const arr=Object.values(DATA.stocks).map(s=>s.tda).filter(Boolean);
@@ -1013,21 +1125,14 @@ function render(){
   if(rwb){ const nA=(DATA.reco_history||[]).filter(h=>h.active).length;
     rwb.innerHTML=`<div class="banner" style="margin:6px 0 14px"><div class="mode up-c">📅 ${esc(DATA.reco_week||'이번 주')}</div>
       <div><div class="k">이번 주차 매수 추천</div><b>${nA}종목</b></div>
-      <div><div class="k">전략</div><b>주도주(F리더) ∩ 20주선 눌림</b></div>
-      <div class="k" style="align-self:center;max-width:320px">눌림대(20주선~+5%)에 들어온 주도주를 추천합니다. 이미 오른 종목은 카드의 <b>매수목표가</b>(눌림대)까지 기다렸다 진입하세요.</div></div>`; }
+      <div><div class="k">전략</div><b>주도주(F리더) ∩ 20주선 눌림 ∩ 52주고점 근접(≥90%)</b></div>
+      <div class="k" style="align-self:center;max-width:320px">52주 고점 근처(≥90%)에서 눌림대(20주선~+5%)에 들어온 주도주만 추천합니다(고점서 먼 종목 제외 → 검증상 낙폭 반토막). 이미 오른 종목은 카드의 <b>매수목표가</b>(눌림대)까지 기다렸다 진입하세요.</div></div>`; }
   const lb=DATA.buy_order.filter(tk=>!held.has(tk));
   document.getElementById("legacyBuy").innerHTML = cbStop + dartExcludedBlock() + (lb.length ? lb.map(tk=>legacyBuyCard(tk,pw,pf.total)).join("") : legacyEmpty(m));
-  const ls=(DATA.legacy_sell||[]).filter(tk=>DATA.stocks[tk]);
-  document.getElementById("legacySell").innerHTML = ls.length ? ls.map(legacySellCard).join("") : '<div class="empty">20주선 하향 이탈 종목 없음.</div>';
-  const tb=(DATA.tda_buy||[]).filter(tk=>!held.has(tk)&&DATA.stocks[tk]);
-  document.getElementById("tdaBuy").innerHTML = cbStop + (tb.length ? tb.map(tk=>tdaBuyCard(tk,pw,pf.total)).join("") : '<div class="empty">위상 안정+추세 매수 후보 없음.</div>');
-  const ts=(DATA.tda_sell||[]).filter(tk=>DATA.stocks[tk]);
-  document.getElementById("tdaSell").innerHTML = ts.length ? ts.map(tdaSellCard).join("") : '<div class="empty">위상 불안정 경고 종목 없음.</div>';
+  renderMarketAlloc();
   renderRecoHistory();
-  const tm=DATA.tda_meta||{};
-  document.getElementById("tdaBadge").textContent = tm.has_ripser ? `(H1 지속성 · 윈도 ${tm.window}일 · ${tm.n}종목)` : `(H0 강등 모드)`;
+  renderWatchPullback();
   document.getElementById("momDx").innerHTML = momNote();
-  document.getElementById("tdaDx").innerHTML = tdaDxNote();
   // 오버나이트 단타
   const ON=DATA.overnight||{}, ost=ON.stats||{};
   const onName=tk=>{const s=DATA.stocks[tk]||((DATA.broad||{})[tk]);return s?s.name:((DATA.all_stocks||{})[tk]||[tk])[0];};
@@ -1070,7 +1175,7 @@ function render(){
       <li><b>유니버스 기준</b> ${esc(DATA.meta.universe_rule||('거래대금 상위 '+DATA.meta.universe_count))} (현재 ${DATA.meta.universe_count}종목). 이 풀에서만 후보·신호를 계산하며, <b>관리 지정 종목은 순위 밖이어도 풀 분석에 포함</b>합니다. 그 외 보유 종목은 가격·손익만 추적.</li>
       <li><b>시장국면(D4)</b> KOSPI·KOSDAQ 지수의 40주선 상회 여부 + 주간 변동성 분위로 목표 총노출 100/70/40%를 시장별 min()으로 결정</li>
       <li><b>리더 F</b> 6–1개월 모멘텀 백분위 ≥85, 52주 고점 대비 ≥80%, 일봉 50&gt;150&gt;200 정배열, 200일선 상승</li>
-      <li><b>진입</b> 리더가 20주선까지 눌린 자리 — 그 주 저가 ≤ 20주선×1.05 & 그 주 종가 &gt; 20주선</li>
+      <li><b>진입</b> 리더가 20주선까지 눌린 자리 — 그 주 저가 ≤ 20주선×1.05 & 그 주 종가 &gt; 20주선, <b>그리고 52주 고점 대비 ≥90%</b>(고점서 먼 종목 제외 — PIT 생존편향제거 검증상 MDD −54%→−26%·Sharpe 0.12→0.32)</li>
       <li><b>비중</b> 목표노출 ÷ 슬롯 수</li>
       <li><b>청산</b> 진입 40거래일 시간청산 <b>또는</b> 20주선 이탈(전량). <b>TDA는 청산에 미사용(자문 전용)</b> — 포트폴리오 백테스트상 TDA 청산은 방향게이트를 해도 미사용(time)보다 수익·MDD·Sharpe 모두 열위라, 변동성 '주의 표시'로만. 리스크는 월 −3% 서킷브레이커가 담당. 강제 손절 미사용</li>
       <li><b>이탈 스크린</b> 종가 &lt; 20주선 & 6–1개월 모멘텀 음수 → 회피·청산 검토</li></ol></div>
@@ -1236,8 +1341,114 @@ suggEl.addEventListener("click",e=>{const d=e.target.closest("div[data-tk]");if(
   if(!document.getElementById("price").value){document.getElementById("price").value=snapTick(SRC[tk][1]);updTickLbl();}});
 document.addEventListener("click",e=>{if(!e.target.closest("#searchWrap"))suggEl.style.display="none";});
 document.getElementById("addBtn").addEventListener("click",addHolding);
+
+// ===== 종목 분석 탭 (검색 → 모든 방법론 진단 + 목표가 + 판정) =====
+const asearchEl=document.getElementById("asearch"), asuggEl=document.getElementById("asugg");
+let _analysisTk=null;
+if(asearchEl){
+  asearchEl.addEventListener("input",()=>{const q=asearchEl.value.trim().toLowerCase();
+    if(!q){asuggEl.style.display="none";return;}
+    const hits=allTk.filter(tk=>tk.includes(q)||SRC[tk][0].toLowerCase().includes(q)).slice(0,12);
+    asuggEl.innerHTML=hits.map(tk=>{const a=SRC[tk],ext=(DATA.stocks[tk]||BROAD[tk])?'':' <span style="color:#e0a93b">·외</span>';
+      return `<div data-tk="${tk}">${esc(a[0])} <span class="mono">${tk}·${a[2]}</span>${ext}</div>`;}).join("");
+    asuggEl.style.display=hits.length?"block":"none";});
+  asuggEl.addEventListener("click",e=>{const d=e.target.closest("div[data-tk]");if(!d)return;const tk=d.dataset.tk;
+    asearchEl.value=SRC[tk][0]+" ("+tk+")";asuggEl.style.display="none";renderAnalysis(tk);});
+  document.addEventListener("click",e=>{if(!e.target.closest("#searchWrap2"))asuggEl.style.display="none";});
+}
+function analysisLoadDart(tk){   // 검색 종목 1건 DART 라이브 조회(로그인 시) → 캐시 병합 후 재렌더
+  if(!idToken||!/^\d{6}$/.test(tk)) return;
+  fetch("/trading/api/dart?codes="+tk,{headers:{Authorization:"Bearer "+idToken}})
+    .then(r=>r.ok?r.json():null).then(j=>{ if(j){ Object.assign(dartProfiles,j); if(_analysisTk===tk) renderAnalysis(tk); } }).catch(e=>{});
+}
+// 진입 적합성 종합 판정 — 우리 규칙·지표 결합(가격 예측 아님): 회피/관망/진입적합/주의.
+function analysisVerdict(tk){
+  const m=meta(tk), cur=m.cur, d=(DATA.dart||{})[tk]||{};
+  const p=(dartProfiles||{})[tk]||((DATA.dart_profiles||{})[tk])||{};
+  const leader=!!m.leader, rs=Math.round(m.rs||0), pull=!!m.pullback;
+  const cush=(m.wma20&&cur)?(cur/m.wma20-1):null;       // 현재가의 20주선 위 이격(=진입 위치·손절까지 거리)
+  const entryLo=m.wma20, entryHi=m.wma20!=null?m.wma20*1.05:null;
+  const cushTxt=cush!=null?(cush>=0?'+':'')+(cush*100).toFixed(0)+'%':'?';
+  const tdaHi=m.tda&&m.tda.risk_pct!=null&&m.tda.risk_pct>=0.75;
+  const distress=p.distress&&p.distress.level==='crit';
+  const terminal=d.terminal&&d.terminal.length;
+  const reasons=[]; let tier,col,bg;
+  // ★진입 판정은 '주봉 눌림 플래그(과거 신호)'가 아니라 '현재가 이격(cush)'으로 — 이미 오른 종목은 관망/목표가 대기★
+  if(terminal){ tier="🔴 회피 — 보유 불가급 공시"; col="#f0584c"; bg="#1a1113"; reasons.push("상폐/거래정지/감사거절 등 터미널 공시(백테스트: 이 부류 진입 중앙 −16.6%·전손 11%)"); }
+  else if(distress){ tier="🔴 회피 — 재무 부실"; col="#f0584c"; bg="#1a1113"; reasons.push("재무 위험: "+((p.distress.flags||[]).join(', ')||'부실')); }
+  else if(cush!=null&&cush<0){ tier="🔴 회피 — 20주선 아래(추세 이탈)"; col="#f0584c"; bg="#1a1113"; reasons.push(`현재가가 20주선(${W(m.wma20)}) 아래 — 추세 약화·우리 손절 기준선 이탈. 진입 부적합(20주선 회복·재돌파 대기).`); }
+  else if(!leader){ tier="🟡 주의 — 주도주 아님"; col="#e0a93b"; bg="#211d10"; reasons.push(`RS ${rs} — 상대강도 부족(우리 전략은 F리더 대상). 강세 전환 전 관망.`); }
+  else if(cush!=null&&cush<=0.07){
+    const mh=(DATA.meta&&DATA.meta.min_high52w!=null)?DATA.meta.min_high52w:0.90;   // 매수 필터 임계(config와 동기화)
+    if(mh>0 && (m.high52||0)<mh){ tier="🟡 주의 — 52주 고점서 멂(매수 필터 미달)"; col="#e0a93b"; bg="#211d10"; reasons.push(`F리더·눌림대지만 52주고점 대비 ${Math.round((m.high52||0)*100)}%(<${Math.round(mh*100)}%) — 고점서 먼 종목은 검증상 하락 위험↑(MDD −54%→−26%로 회피), 우리 매수 필터서 제외. 관망.`); }
+    else { tier="🟢 진입 적합 — 주도주 눌림대"; col="var(--buy)"; bg="#0f1a12"; reasons.push(`F리더(RS ${rs}) · 20주선 ${cushTxt}(눌림 진입대) · 52주고점 ${Math.round((m.high52||0)*100)}% 근접 — 손절 가까워 하방 작음`); }
+  }
+  else if(cush!=null&&cush>0.15){ tier="🟡 관망 — 이미 상승(눌림 대기)"; col="#e0a93b"; bg="#211d10"; reasons.push(`F리더(RS ${rs})지만 현재가 20주선 ${cushTxt} 위 — 매수목표가(눌림대 ${entryLo!=null?W(entryLo)+'~'+W(entryHi):'—'})까지 대기 권장`); if(pull) reasons.push("주봉상 눌림 신호는 있었으나 현재가는 진입대보다 위(이미 상승) — 다음 눌림 대기"); }
+  else { tier="🟡 분할·주의 — 진입대 약간 위"; col="#e0a93b"; bg="#211d10"; reasons.push(`F리더(RS ${rs}) · 현재가 20주선 ${cushTxt} — 눌림대 약간 위, 분할 접근`); }
+  if(tdaHi&&!terminal&&!distress) reasons.push(`TDA 위상 고위험(상위 ${Math.round(m.tda.risk_pct*100)}%) — 변동성 주의(매도 트리거 아님, 참고)`);
+  const ex=DATA.exposure; if(ex&&ex.mode&&/off|risk-?off|위험/i.test(ex.mode)) reasons.push(`시장 국면 ${esc(ex.mode)}(목표노출 ${Math.round((ex.target_exposure||0)*100)}%) — 신규 진입 신중`);
+  if((d.crit&&d.crit.length)&&!terminal) reasons.push("악재성 공시 존재(자동제외 아님 — 검증상 영향 불명, 확인 권장)");
+  return {tier,col,bg,reasons};
+}
+function renderAnalysis(tk){
+  _analysisTk=tk; const el=document.getElementById("analysisOut"); if(!el) return;
+  const m=meta(tk), cur=m.cur;
+  const nm=`<b style="font-size:17px">${esc(m.name||tk)}</b> <span class="mono">${tk}·${m.market||''}${m.sector?'·'+esc(m.sector):''}</span>`;
+  if(!m.analyzed){
+    el.innerHTML=`<div class="card"><div class="hd">${nm} ${cur!=null?`<b style="font-size:16px">${W(cur)}</b>`:''}</div>
+      <div class="meta" style="color:#e0a93b">유니버스(상위 ${DATA.meta.universe_count}종목) + 분석 티어 밖 — 심화 지표(RS·TDA·눌림)는 미제공. 가격·공시(DART)만 표시.</div>
+      ${idToken?'<div id="adart"></div>':'<div class="meta sub">로그인하면 이 종목의 공시·재무(DART)가 표시됩니다.</div>'}</div>`;
+    analysisLoadDart(tk); return;
+  }
+  const v=analysisVerdict(tk);
+  const entryLo=m.wma20, entryHi=m.wma20!=null?m.wma20*1.05:null;
+  const hi52=(m.high52>0&&cur)?cur/m.high52:null;
+  const stop=m.swing20!=null?m.swing20:m.wma20;
+  const cush=(m.wma20&&cur)?(cur/m.wma20-1):null;
+  const inBand=cur!=null&&entryLo!=null&&cur>=entryLo&&cur<=entryHi*1.001;
+  const lvlBox=(lab,val,sub,cls)=>`<div class="lvbox"><div class="sub">${lab}</div><b class="${cls||''}">${val}</b><div class="sub">${sub}</div></div>`;
+  // 매수목표가(눌림대) 현실성 — 현재가 대비 진입가 차이 명시(이미 오른 종목은 '깊은 눌림 필요·단기 진입 기회 아님')
+  const gapToEntry=(cur&&entryLo)?(entryLo/cur-1):null;
+  let entrySub='—', entryCls='';
+  if(cush!=null&&entryLo!=null){
+    if(cush<0) entrySub=`20주선 회복 필요 · 진입가 현 +${(gapToEntry*100).toFixed(0)}%`;
+    else if(cush<=0.07){ entrySub='지금 진입대 — 적정'; entryCls='pos'; }
+    else if(cush<=0.15){ entrySub=`소폭 눌림 대기 · 진입가 현 ${(gapToEntry*100).toFixed(0)}%`; entryCls='pos'; }
+    else entrySub=`깊은 눌림 필요 · 진입가 현 ${(gapToEntry*100).toFixed(0)}% (단기 진입 기회 아님)`;
+  }
+  const entryVal=entryLo!=null?W(entryLo)+'~'+W(entryHi):'—';
+  const levels={target:hi52,stop:stop,entry:entryLo};
+  const chart=m.chart?`<div class="cl">일봉 · MA<b style="color:#34c77b">5</b><b style="color:#e0a93b">20</b><b style="color:#8b8f97">60</b> · 거래량 · 레벨 <b style="color:#34c77b">목표</b>/<b style="color:#f0584c">손절</b>/<b style="color:#e0a93b">눌림</b></div><canvas data-tk="${tk}" data-levels='${esc(JSON.stringify(levels))}' style="height:190px"></canvas>`
+    :`<div class="meta" style="color:#8b8f97">차트 미제공(분석 티어) · 지표·TDA는 분석됨</div>`;
+  const t=m.tda;
+  const tdaBlk=t?`<div class="srow" style="margin-top:8px"><b>TDA 위상리스크</b> <span class="sub">상위 ${Math.round((t.risk_pct||0)*100)}% 위험 · 추세 ${t.trend>=0?'상향':'하향'} · 점수 ${t.score} <span class="sub">(자문 전용 — 매도 트리거 아님)</span></span></div>
+     <div class="tbar"><div style="width:${Math.round((t.risk_pct||0)*100)}%;background:${t.risk_pct>=0.75?'#f0584c':t.risk_pct>=0.5?'#e0a93b':'#34c77b'}"></div></div>`:'';
+  const cushChip=cush!=null?(cush>=0?'+':'')+(cush*100).toFixed(0)+'%':'—';
+  const posChip=(cush!=null&&cush<=0.07)?'눌림 진입대 ✓':(cush!=null&&cush>0.15?'진입대 위(과열)':(cush!=null&&cush<0?'20주선 아래':'진입대 부근'));
+  const chips=[`주도주 ${m.leader?'✓':'✗'}`,`RS ${Math.round(m.rs||0)}`,`52주고점 ${Math.round((m.high52||0)*100)}%`,`20주선 이격 ${cushChip}`,posChip].map(x=>`<span class="chip">${x}</span>`).join(" ");
+  const rc=(window.RECO||{})[tk];
+  const recoBlk=rc?`<div class="warn" style="border-left-color:var(--buy);background:#0f1a12"><b>📜 추천 이력</b> <span class="sub">${esc(rc.week||'')} (${_dmd(rc.reco_date)}) @ ${W(rc.reco_close)} · 매수목표 ${rc.target_low?W(rc.target_low)+'~'+W(rc.target_high):'—'} · 현재 ${rc.cur_close!=null?W(rc.cur_close):'—'} <b class="${rc.ret>=0?'pos':'neg'}">${rc.ret!=null?P(rc.ret):''}</b>${rc.active?' <span class="pill buy" style="font-size:9px">추천중</span>':''}</span><br><span class="sub">${esc(rc.reason||'')}</span></div>`:'';
+  el.innerHTML=`<div class="card">
+    <div class="hd">${nm} ${cur!=null?`<b class="${cur>=(m.wma20||cur)?'pos':'neg'}" style="font-size:16px">${W(cur)}</b>`:''}${LIVE[tk]!=null?' <span class="sub" style="color:var(--up)">●실시간</span>':''}</div>
+    <div class="warn" style="border-left-color:${v.col};background:${v.bg};color:#dcdfe4"><b>종합 판정: ${v.tier}</b><div class="sub" style="margin-top:3px;line-height:1.6">${v.reasons.map(r=>'• '+r).join('<br>')}</div></div>
+    <div class="lvrow">
+      ${lvlBox('매수목표가(눌림대)',entryVal,entrySub,entryCls)}
+      ${lvlBox('목표가(참고)',hi52?W(hi52):'신고가권',hi52&&cur?`52주 전고점 (+${((hi52/cur-1)*100).toFixed(1)}%)`:'전고점 회복','pos')}
+      ${lvlBox('손절가(참고)',stop?W(stop):'—',stop&&cur?`${m.swing20!=null?'스윙로우':'20주선'} ${((stop/cur-1)*100).toFixed(1)}%`:'—','neg')}
+    </div>
+    ${recoBlk}
+    ${chart}
+    <div class="plan" style="margin-top:8px"><div style="grid-column:1/-1">${chips}</div></div>
+    ${tdaBlk}
+    ${idToken?'<div id="adart"></div>':'<div class="meta sub">로그인하면 이 종목의 공시·재무(DART)도 함께 분석됩니다.</div>'}
+    <div class="meta sub" style="margin-top:8px">※ 목표·손절은 가격 예측이 아니라 우리 전략의 <b>참고 레벨</b>(눌림 진입대·52주 전고점·손절선)입니다. 청산은 40거래일 시간청산 또는 20주선 이탈. 검증된 기대치는 인덱스 초과가 아니라 비슷한 위험·수익이며, DART는 알파가 아닌 꼬리위험 회피용입니다.</div>
+  </div>`;
+  if(idToken){ const p=(dartProfiles||{})[tk]||((DATA.dart_profiles||{})[tk]); const ad=document.getElementById("adart");
+    if(ad){ if(p) ad.innerHTML=dartBlock(tk)||'<div class="meta sub">표시할 공시·재무 항목 없음(DART).</div>'; else { ad.innerHTML='<div class="meta sub">공시·재무(DART) 불러오는 중…</div>'; analysisLoadDart(tk); } } }
+  setTimeout(()=>{ try{ document.querySelectorAll("#analysisOut canvas[data-tk]").forEach(cv=>{ const s=DATA.stocks[cv.dataset.tk]||(DATA.broad&&DATA.broad[cv.dataset.tk]); drawChart(cv,s&&s.daily); }); }catch(e){} },30);
+}
 // 탭 전환
-const TAB_ORDER=["portfolio","discover","sim","backtest","strategy"];
+const TAB_ORDER=["portfolio","discover","analysis","sim","backtest","strategy"];
 function activateTab(p){
   if(!TAB_ORDER.includes(p)) return;
   document.querySelectorAll("#tabs .tab").forEach(x=>x.classList.toggle("active",x.dataset.panel===p));

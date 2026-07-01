@@ -57,6 +57,8 @@ def execute_day(state, day, sig):
     cal = sig.get("calendar", [])
     hold_days = int(sig.get("hold_days", 40))
     sells_set = set(sig.get("sell_tickers", []))     # 추세이탈(20주선) — 전량청산
+    cut_days = int(sig.get("early_cut_days", 0))     # 정체컷: K거래일 이상 보유 & 수익률≤cut_ret면 조기청산(0=끔)
+    cut_ret = float(sig.get("early_cut_ret", 0.0))   # '가망없음' 임계(예: 0.01=+1% 이하면 데드머니로 보고 청산)
     trades = []
 
     # 보유 종목 최신가 갱신(가능하면)
@@ -82,6 +84,10 @@ def execute_day(state, day, sig):
     for p in positions:
         held = _trading_days_between(cal, p["entry_date"], day)
         full = "시간청산(40일)" if held >= hold_days else ("추세이탈(20주선)" if p["ticker"] in sells_set else None)
+        if not full and cut_days and held >= cut_days:   # 정체컷: 충분히 보유했는데 진척 없으면 데드머니 청산
+            cur = _price(sig, p["ticker"], p.get("last_price") or p["entry_price"])
+            if p["entry_price"] and (cur / p["entry_price"] - 1) <= cut_ret:
+                full = "정체컷"
         if full:
             px = _price(sig, p["ticker"], p.get("last_price") or p["entry_price"])
             cash += _record_sell(p, p["shares"], px, held, full)
@@ -166,3 +172,144 @@ def new_state(investment, cb_limit=CB_LIMIT, cb_mode="block"):
     return {"investment": float(investment), "cash": float(investment), "positions": [],
             "cb_month": None, "cb_base_pnl": 0.0, "cb_limit": float(cb_limit), "cb_mode": cb_mode,
             "cb_liq_month": None}
+
+
+_CORE_NAME = {"KOSPI": "KODEX 200(코어)", "KOSDAQ": "KODEX 코스닥150(코어)"}
+
+
+def execute_day_coresat(state, day, sig):
+    """코어-위성 하루 집행 — 코어=추세 위 지수 로테이션(core_weight), 위성=active 종목((1-core_weight)).
+
+    코어 포지션은 positions 내 특수항목 {core:True, index, shares(=지수단위), entry_price(=지수레벨)}로 보관.
+    · 코어: 추세 위 지수(sig.core_alloc.lead)로 로테이션. 리밸=코어없음/리드전환/±15%드리프트일 때만(저churn).
+      두 지수 모두 추세 아래(lead=None)면 코어 청산→현금(방어). 지수 레벨을 ETF 프록시가로 사용(무배당·수수료 근사).
+    · 위성: 기존 active 청산(40일/20주선/정체컷) + 매수(D4 노출 m 내). 슬리브 비중=(1-core_weight).
+    · 시장 리스크 관리는 코어 로테이션이 담당 → 위성에 월 서킷브레이커 미적용(단순·견고).
+    """
+    inv = float(state["investment"]); cash = float(state["cash"])
+    positions = [dict(p) for p in state.get("positions", [])]
+    cost = float(sig.get("cost", 0.0035))
+    cw = min(max(float(state.get("core_weight", 0.7)), 0.0), 1.0)
+    ca = sig.get("core_alloc", {}) or {}
+    lead = ca.get("lead")
+    idx_px = {"KOSPI": ca.get("kospi"), "KOSDAQ": ca.get("kosdaq")}
+    cal = sig.get("calendar", []); hold_days = int(sig.get("hold_days", 40))
+    sells_set = set(sig.get("sell_tickers", []))
+    cut_days = int(sig.get("early_cut_days", 0)); cut_ret = float(sig.get("early_cut_ret", 0.0))
+    trades = []
+
+    core = next((p for p in positions if p.get("core")), None)
+    sats = [p for p in positions if not p.get("core")]
+
+    for p in sats:                                   # 위성 최신가=종목 종가
+        px = sig.get("prices", {}).get(p["ticker"])
+        if px and px > 0:
+            p["last_price"] = float(px)
+    if core:                                         # 코어 최신가=지수 레벨
+        cpx = idx_px.get(core.get("index"))
+        if cpx and cpx > 0:
+            core["last_price"] = float(cpx)
+
+    def _cval(c):
+        if not c:
+            return 0.0
+        px = idx_px.get(c.get("index")) or c.get("last_price") or c.get("entry_price")
+        return c["shares"] * float(px or 0)
+
+    def _sval(ps):
+        return sum(p["shares"] * _price(sig, p["ticker"], p.get("last_price") or p["entry_price"]) for p in ps)
+
+    def _record_sell(p, sh, px, held, reason):
+        proceeds = sh * px * (1 - cost / 2)
+        buy_cost = p["entry_price"] * sh * (1 + cost / 2)
+        trades.append({"ticker": p["ticker"], "name": p.get("name", p["ticker"]),
+                       "entry_date": p["entry_date"], "entry_price": p["entry_price"],
+                       "exit_date": day, "exit_price": px, "shares": sh,
+                       "pnl": round(proceeds - buy_cost), "ret": (px / p["entry_price"] - 1) if p["entry_price"] else 0.0,
+                       "days": held, "reason": reason})
+        return proceeds
+
+    # 1) 위성 청산 — 40거래일 / 20주선 이탈 / 정체컷(코어는 제외)
+    keep = []
+    for p in sats:
+        held = _trading_days_between(cal, p["entry_date"], day)
+        full = "시간청산(40일)" if held >= hold_days else ("추세이탈(20주선)" if p["ticker"] in sells_set else None)
+        if not full and cut_days and held >= cut_days:
+            cur = _price(sig, p["ticker"], p.get("last_price") or p["entry_price"])
+            if p["entry_price"] and (cur / p["entry_price"] - 1) <= cut_ret:
+                full = "정체컷"
+        if full:
+            px = _price(sig, p["ticker"], p.get("last_price") or p["entry_price"])
+            cash += _record_sell(p, p["shares"], px, held, full)
+            continue
+        keep.append(p)
+    sats = keep
+
+    equity = cash + _cval(core) + _sval(sats)         # 마크투마켓 에쿼티(사이징 기준)
+    target_core = cw * equity
+
+    # 2) 코어 리밸런스 — 로테이션. 저churn: 코어없음/리드전환/±15%드리프트만.
+    if lead is None:                                  # 두 지수 추세 아래 → 코어 청산(현금 방어)
+        if core:
+            px = float(idx_px.get(core["index"]) or core.get("last_price") or core["entry_price"])
+            held = _trading_days_between(cal, core["entry_date"], day)
+            cash += _record_sell(core, core["shares"], px, held, "코어→현금(추세이탈)")
+            core = None
+    else:
+        cur_core = _cval(core)
+        drift = abs(cur_core / target_core - 1) if target_core > 0 else (1.0 if core else 0.0)
+        need = (core is None) or (core.get("index") != lead) or (drift > 0.15)
+        if need:
+            lpx = idx_px.get(lead)
+            if lpx and lpx > 0:
+                if core:                              # 기존 코어 청산(전환/리밸)
+                    px = float(idx_px.get(core["index"]) or core.get("last_price") or core["entry_price"])
+                    held = _trading_days_between(cal, core["entry_date"], day)
+                    cash += _record_sell(core, core["shares"], px, held,
+                                         "코어 전환" if core["index"] != lead else "코어 리밸런스")
+                    core = None
+                spend = min(target_core, max(0.0, cash))     # 코어 우선, 현금 한도(무차입)
+                units = spend / (lpx * (1 + cost / 2))
+                if units > 0:
+                    cash -= units * lpx * (1 + cost / 2)
+                    core = {"ticker": f"_CORE_{lead}", "core": True, "index": lead,
+                            "name": _CORE_NAME.get(lead, f"{lead} 코어"), "entry_date": day,
+                            "entry_price": lpx, "shares": units, "last_price": lpx}
+
+    # 3) 위성 매수 — 슬리브 비중=(1-cw). per-position=weight×(1-cw)×equity, 현금 한도.
+    slots = int(sig.get("exposure", {}).get("slots", 0))
+    weight = float(sig.get("exposure", {}).get("weight", 0.0)) * (1.0 - cw)
+    if slots > len(sats) and weight > 0:
+        held_tk = {p["ticker"] for p in sats}
+        for c in sig.get("buy_order", []):
+            if len(sats) >= slots:
+                break
+            tk = c.get("ticker")
+            if not tk or tk in held_tk:
+                continue
+            px = float(c.get("close") or 0)
+            if px <= 0:
+                continue
+            sh = math.floor(weight * equity / px)
+            spend = sh * px * (1 + cost / 2)
+            if sh > 0 and cash >= spend:
+                cash -= spend
+                sats.append({"ticker": tk, "name": c.get("name", tk), "entry_date": day,
+                             "entry_price": px, "shares": sh, "last_price": px})
+                held_tk.add(tk)
+
+    # 4) 평가
+    positions = ([core] if core else []) + sats
+    cv, sv = _cval(core), _sval(sats)
+    hv = cv + sv
+    equity_final = cash + hv
+    new_state = {"investment": inv, "cash": round(cash, 2), "positions": positions,
+                 "core_weight": cw, "cb_month": state.get("cb_month"),
+                 "cb_base_pnl": state.get("cb_base_pnl", 0.0),
+                 "cb_limit": state.get("cb_limit", 0.03), "cb_mode": state.get("cb_mode", "block")}
+    result = {"date": day, "equity": round(equity_final), "cash": round(cash), "holdings_value": round(hv),
+              "trades": trades, "tripped": False, "n_positions": len(sats),
+              "core_index": (core.get("index") if core else None),
+              "core_value": round(cv), "sat_value": round(sv),
+              "core_pct": round(cv / equity_final, 3) if equity_final > 0 else 0}
+    return new_state, result

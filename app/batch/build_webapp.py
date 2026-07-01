@@ -113,6 +113,27 @@ def main():
     weekly_asof = weekly_ind[weekly_ind["week_end"] <= wk_cut].sort_values(["ticker", "week_end"]).groupby("ticker").tail(1)
     exp = compute_d4_exposure(index, asof, cfg)
 
+    # 시장 배분 신호 — 인덱스 추세추종(40주선) + 스타일(KOSPI vs KOSDAQ 13주 상대강도).
+    # 검증(PIT 생존편향제거 2017~2026): 이 레짐선 지수 추세추종/스타일 배분이 active 종목선택을 압도.
+    market_alloc = {}
+    for _mk in ("KOSPI", "KOSDAQ"):
+        _s = index[index["market"] == _mk].sort_values("date")
+        if len(_s) < 41:
+            continue
+        _c = float(_s["close"].iloc[-1]); _ma = float(_s["close"].tail(40).mean())
+        _mom = (_c / float(_s["close"].iloc[-14]) - 1) if len(_s) >= 14 else 0.0
+        market_alloc[_mk] = {"close": round(_c, 1), "ma40": round(_ma, 1),
+                             "above_trend": bool(_c > _ma), "trend_pct": round(_c / _ma - 1, 4), "mom13": round(_mom, 4)}
+    _on = [mk for mk in ("KOSPI", "KOSDAQ") if market_alloc.get(mk, {}).get("above_trend")]
+    if not _on:
+        market_alloc["lead"] = None
+        market_alloc["guide"] = "현금·축소 — 두 지수 모두 40주선 아래(추세 이탈). 신규 노출 자제."
+    else:
+        _lead = max(_on, key=lambda mk: market_alloc[mk]["mom13"])
+        market_alloc["lead"] = _lead
+        market_alloc["guide"] = (f"{_lead} 우위 — 추세 위 지수에 노출. "
+                                 + ("두 지수 모두 추세 위." if len(_on) == 2 else f"{_lead}만 추세 위."))
+
     uni = daily_asof[(daily_asof["close"] >= cfg["universe"]["min_close"]) &
                      (daily_asof["listing_days"] >= cfg["universe"]["min_listing_days"])].copy()
     managed = [str(t).zfill(6) for t in cfg["universe"].get("managed_tickers", [])]
@@ -295,36 +316,29 @@ def main():
     all_stocks = fetch_all_stocks(auth, asof_str)
     close_map = {tk: (v[1] if isinstance(v, (list, tuple)) and len(v) > 1 else None) for tk, v in (all_stocks or {}).items()}
     _repo2 = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    # bt_archive(2017~ 일별 매수후보)로 현재 후보의 '최근 추천 시작일·당시가' 백필 — PSK홀딩스 류 고민 해소
-    first_reco = {}
-    try:
-        bt = json.load(open(os.path.join(_repo2, "state", "bt_days.json"), encoding="utf-8"))
-        btp = pd.read_parquet(os.path.join(_repo2, "state", "bt_prices.parquet"))
-        btp["d"] = btp["date"].astype(str).str[:10]
-        recent = sorted(bt.get("days", {}).keys())[-60:]      # 최근 60거래일 내 최초 등장 = 최근 추천 시작
-        for tk in buy_order:
-            appear = [d for d in recent if tk in (bt["days"][d].get("buy") or [])]
-            if appear:
-                d0 = appear[0]
-                px = btp[(btp["ticker"] == tk) & (btp["d"] == d0)]["close"]
-                first_reco[tk] = (d0, float(px.iloc[0]) if len(px) else None)
-    except Exception as e:
-        print(f"추천 백필 생략(bt_archive): {e}", file=sys.stderr)
+    # 추천 이력 — bt_archive(매 거래일 매수후보)에서 지난 ~6개월 전체 추천 종목을 백필.
+    # 종목별 최근 추천 에피소드 + 추천 후 40거래일 청산 실현수익률(우리 기본 청산). 활성 후보는 추천중 표시.
+    reco_list, reco_week = [], ""
     try:
         from app.batch import reco_archive  # noqa: E402
-        reco_hist = reco_archive.update(buy_order, stocks, close_map, str(asof.date()),
-                                        os.path.join(_repo2, "state", "reco_history.json"), first_reco=first_reco)
+        bt = json.load(open(os.path.join(_repo2, "state", "bt_days.json"), encoding="utf-8"))
+        btp = pd.read_parquet(os.path.join(_repo2, "state", "bt_prices.parquet"))
+        reco_list = reco_archive.build_full_history(
+            bt.get("days", {}), btp, weekly_ind, set(buy_order), str(asof.date()), bt.get("names", {}))
         reco_week = reco_archive.week_label(str(asof.date()))
-        reco_list = sorted(reco_hist.values(), key=lambda h: (h.get("reco_date", ""), h.get("ticker", "")), reverse=True)
-        print(f"추천 이력: {len(reco_hist)}종목(활성 {sum(1 for h in reco_hist.values() if h.get('active'))}) · {reco_week}", file=sys.stderr)
+        nC = sum(1 for h in reco_list if h.get("status") == "청산")
+        nA = sum(1 for h in reco_list if h.get("active"))
+        print(f"추천 이력(풀): {len(reco_list)}종목(추천중 {nA}·청산 {nC}) · {reco_week}", file=sys.stderr)
     except Exception as e:
-        print(f"추천 이력 갱신 실패(생략): {e}", file=sys.stderr); reco_list, reco_week = [], ""
+        import traceback
+        print(f"추천 이력 갱신 실패(생략): {e}", file=sys.stderr); traceback.print_exc()
 
     payload = {
         "meta": {"asof": str(asof.date()), "next_day": str(nxt.date()),
                  "system_date": f"{today[:4]}-{today[4:6]}-{today[6:]}",
                  "strategy": "F 리더 + 20주선 눌림 + 8주(40거래일) 보유 + D4 변동성 노출",
                  "universe_count": int(len(uni)), "generated": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                 "min_high52w": float(cfg.get("pullback", {}).get("min_high52w_ratio", 0.0)),
                  "universe_short": ("시가총액상위" if cfg['universe'].get('rank_by') == 'mktcap' else "거래대금상위"),
                  "google_client_id": _load_env_key("GOOGLE_CLIENT_ID"),   # 구글 로그인 동기화(공개값, .env)
                  "universe_rule": ((f"KOSPI+KOSDAQ · 시가총액 상위 {cfg['universe']['top_n']}"
@@ -348,7 +362,7 @@ def main():
                      "exit_trim_frac": float(tcfg.get("exit_trim_frac", 0.5))},
         "all_stocks": all_stocks, "broad": broad, "overnight": overnight, "dart": dart_flags,
         "dart_excluded": dart_excluded, "dart_profiles": dart_profiles,
-        "reco_history": reco_list, "reco_week": reco_week,
+        "reco_history": reco_list, "reco_week": reco_week, "market_alloc": market_alloc,
     }
     tpl = open(TEMPLATE, encoding="utf-8").read()
     html = tpl.replace("__DATA__", json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
@@ -381,6 +395,11 @@ def main():
             "sell_tickers": sorted(set(legacy_sell)),     # 청산 = 시간40일 + 20주선 이탈만(TDA 청산 미사용 — 자문 전용)
             "prices": prices, "calendar": cal,
             "dart_excluded": dart_excluded,               # 터미널 공시로 매수 제외된 종목(buy_order엔 이미 빠짐, 감사용)
+            "core_alloc": {                               # 코어-위성 시뮬용: 코어=추세 위 지수 로테이션
+                "lead": market_alloc.get("lead"),
+                "kospi": market_alloc.get("KOSPI", {}).get("close"),
+                "kosdaq": market_alloc.get("KOSDAQ", {}).get("close"),
+            },
         }
         _repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         _sp = os.path.join(_repo, "state", "daily_signals.json")

@@ -124,6 +124,9 @@ def build_buy_candidates(merged, positions_after_sells, sells, config):
     held = set(positions_after_sells["ticker"]) if len(positions_after_sells) else set()
     sold = set(sells["ticker"]) if len(sells) else set()
     cand = merged[merged["is_f_leader"] & merged["pullback_20w_105"].fillna(False)].copy()
+    min_hi52 = float(config.get("pullback", {}).get("min_high52w_ratio", 0.0))   # 52주고점 근접 필터(검증: 근접일수록 승률·Sharpe↑)
+    if min_hi52 > 0 and "high_52w_ratio" in cand.columns:
+        cand = cand[cand["high_52w_ratio"].fillna(0) >= min_hi52]
     cand = cand[~cand["ticker"].isin(held | sold)]
     if not len(cand):
         return cand

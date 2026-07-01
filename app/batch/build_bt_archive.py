@@ -87,7 +87,11 @@ def main():
             wcache[wc] = wk[wk["week_end"] <= wc].sort_values(["ticker", "week_end"]).groupby("ticker").tail(1)
         pull = compute_pullback_flags(wcache[wc], cfg)
         mg = lead.merge(pull[["ticker", "pullback_20w_105", "w_ma20"]], on="ticker", how="left")
-        cand = mg[mg["is_f_leader"] & mg["pullback_20w_105"].fillna(False)].sort_values("rs_rank", ascending=False)
+        cand = mg[mg["is_f_leader"] & mg["pullback_20w_105"].fillna(False)]
+        _mh = float(cfg.get("pullback", {}).get("min_high52w_ratio", 0.0))   # 52주고점 근접 필터(라이브와 동일)
+        if _mh > 0 and "high_52w_ratio" in cand.columns:
+            cand = cand[cand["high_52w_ratio"].fillna(0) >= _mh]
+        cand = cand.sort_values("rs_rank", ascending=False)
         buy = [tk for tk in cand["ticker"]]
         mg["bw"] = mg["close"] / mg["w_ma20"] - 1
         sells = list(mg[(mg["bw"] < 0) & (mg["mom_6m_1m"] < 0)]["ticker"])

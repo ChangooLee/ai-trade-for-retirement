@@ -18,11 +18,12 @@ PRICES_PATH = os.path.join(_REPO, "state", "bt_prices.parquet")
 LEV_CAP = 2.0      # 레버리지 상한(신용 2배). run_sims와 일치.
 
 
-def run(start, end, capital, exposure_mult, cb_limit, cb_mode="block"):
+def run(start, end, capital, exposure_mult, cb_limit, cb_mode="block", hold_days_override=None,
+        early_cut_days=0, early_cut_ret=0.0):
     arch = json.load(open(DAYS_PATH, encoding="utf-8"))
     sizing = arch.get("sizing", {})
     maxpos = int(sizing.get("max_positions", 15)); baseslot = float(sizing.get("base_slot_weight", 0.05))
-    hold_days = int(sizing.get("hold_days", 40)); cost = float(sizing.get("cost", 0.0035))
+    hold_days = int(hold_days_override or sizing.get("hold_days", 40)); cost = float(sizing.get("cost", 0.0035))
     names = arch.get("names", {}); calendar = arch.get("calendar", [])
     px = pd.read_parquet(PRICES_PATH)
     px = px[(px["date"] >= start) & (px["date"] <= end)]
@@ -39,7 +40,8 @@ def run(start, end, capital, exposure_mult, cb_limit, cb_mode="block"):
         buy = [{"ticker": tk, "name": names.get(tk, tk), "close": pr[tk]} for tk in rec["buy"] if tk in pr and pr[tk] > 0]
         sig = {"hold_days": hold_days, "cost": cost,
                "exposure": {"slots": int(slots), "weight": weight, "max_lev": round(m, 4)},
-               "buy_order": buy, "sell_tickers": rec["sells"], "prices": pr, "calendar": calendar}
+               "buy_order": buy, "sell_tickers": rec["sells"], "prices": pr, "calendar": calendar,
+               "early_cut_days": early_cut_days, "early_cut_ret": early_cut_ret}
         st, res = engine.execute_day(st, d, sig)
         if res["tripped"]:
             trips += 1

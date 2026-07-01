@@ -39,7 +39,7 @@ def init(path=None):
       sub TEXT, date TEXT, equity REAL, cash REAL, holdings_value REAL,
       n_positions INTEGER, tripped INTEGER, PRIMARY KEY(sub, date));
     """)
-    for col, dflt in (("cb_limit", "0.03"), ("exposure_mult", "1.0")):   # 기존 DB 마이그레이션(REAL)
+    for col, dflt in (("cb_limit", "0.03"), ("exposure_mult", "1.0"), ("core_weight", "0")):   # 기존 DB 마이그레이션(REAL)
         try:
             c.execute(f"ALTER TABLE sim ADD COLUMN {col} REAL DEFAULT {dflt}")
         except sqlite3.OperationalError:
@@ -58,20 +58,22 @@ def get_sim(sub, path=None):
     return dict(r) if r else None
 
 
-def start_sim(sub, email, investment, start_date, path=None, cb_limit=0.03, exposure_mult=1.0, cb_mode="block"):
-    """시뮬 시작/리셋 — 기존 기록(체결·에쿼티)을 지우고 그날부터 새로 시작. cb_limit·exposure_mult·cb_mode 조정 가능."""
+def start_sim(sub, email, investment, start_date, path=None, cb_limit=0.03, exposure_mult=1.0, cb_mode="block", core_weight=0.0):
+    """시뮬 시작/리셋 — 기존 기록(체결·에쿼티)을 지우고 그날부터 새로 시작. cb_limit·exposure_mult·cb_mode·core_weight 조정 가능.
+    core_weight>0 이면 코어-위성 모드(코어=지수 로테이션 core_weight, 위성=active). 0이면 기존 순수 active."""
     c = _conn(path)
     now = dt.datetime.utcnow().isoformat()
     cb_mode = "liq" if cb_mode == "liq" else "block"
+    core_weight = min(max(float(core_weight or 0.0), 0.0), 1.0)
     c.execute("DELETE FROM trade WHERE sub=?", (sub,))
     c.execute("DELETE FROM equity WHERE sub=?", (sub,))
-    c.execute("""INSERT INTO sim(sub,email,investment,start_date,status,created_at,last_processed,cash,cb_month,cb_base_pnl,positions_json,cb_limit,exposure_mult,cb_mode)
-                 VALUES(?,?,?,?,'active',?,NULL,?,NULL,0,'[]',?,?,?)
+    c.execute("""INSERT INTO sim(sub,email,investment,start_date,status,created_at,last_processed,cash,cb_month,cb_base_pnl,positions_json,cb_limit,exposure_mult,cb_mode,core_weight)
+                 VALUES(?,?,?,?,'active',?,NULL,?,NULL,0,'[]',?,?,?,?)
                  ON CONFLICT(sub) DO UPDATE SET email=excluded.email, investment=excluded.investment,
                    start_date=excluded.start_date, status='active', created_at=excluded.created_at,
                    last_processed=NULL, cash=excluded.cash, cb_month=NULL, cb_base_pnl=0, positions_json='[]',
-                   cb_limit=excluded.cb_limit, exposure_mult=excluded.exposure_mult, cb_mode=excluded.cb_mode""",
-              (sub, email, float(investment), start_date, now, float(investment), float(cb_limit), float(exposure_mult), cb_mode))
+                   cb_limit=excluded.cb_limit, exposure_mult=excluded.exposure_mult, cb_mode=excluded.cb_mode, core_weight=excluded.core_weight""",
+              (sub, email, float(investment), start_date, now, float(investment), float(cb_limit), float(exposure_mult), cb_mode, core_weight))
     c.commit(); c.close()
 
 
@@ -85,7 +87,8 @@ def state_from_row(row):
             "positions": json.loads(row["positions_json"] or "[]"),
             "cb_month": row["cb_month"], "cb_base_pnl": row["cb_base_pnl"] or 0.0,
             "cb_limit": (row["cb_limit"] if row["cb_limit"] is not None else 0.03),
-            "cb_mode": (row["cb_mode"] if "cb_mode" in keys and row["cb_mode"] else "block")}
+            "cb_mode": (row["cb_mode"] if "cb_mode" in keys and row["cb_mode"] else "block"),
+            "core_weight": (row["core_weight"] if "core_weight" in keys and row["core_weight"] is not None else 0.0)}
 
 
 def save_step(sub, new_state, result, path=None):
@@ -134,6 +137,7 @@ def results(sub, path=None):
         "cb_limit": s["cb_limit"] if s["cb_limit"] is not None else 0.03,
         "cb_mode": s.get("cb_mode") or "block",
         "exposure_mult": s["exposure_mult"] if s["exposure_mult"] is not None else 1.0,
+        "core_weight": s.get("core_weight") if s.get("core_weight") is not None else 0.0,
         "last_processed": s["last_processed"], "equity": last_eq, "cash": s["cash"],
         "total_pnl": last_eq - inv, "total_ret": (last_eq / inv - 1) if inv else 0.0,
         "realized_pnl": realized, "n_trades": len(trades),

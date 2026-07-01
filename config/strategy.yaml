@@ -35,6 +35,10 @@ pullback:
   weekly_ma: 20
   low_band: 1.05
   require_weekly_close_above_ma: true
+  min_high52w_ratio: 0.90   # 52주 고점 근접 필터 — 고점 근처(현재가/52주고점 ≥ 0.90) 눌림만 매수. 0=끔.
+  # 근거(2026-07 PIT 생존편향제거 검증, 2017~2026 & 2022~2026 두 구간 단조 최선):
+  # ≥0.90: 9.5년 Sharpe 0.12→0.32 · MDD −54%→−26%(반토막) · 승률 42→47%. 고점서 먼 패자=falling knife 회피(Byun-Jeon).
+  # F리더는 이미 52주≥0.80 게이트(leader.high_52w_threshold) — 이 필터는 매수 한정 ≥0.90 강화(leader 정의는 0.80 유지).
 
 holding:
   max_holding_days: 40

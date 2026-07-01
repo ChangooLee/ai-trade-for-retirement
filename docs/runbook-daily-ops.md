@@ -1,7 +1,11 @@
 # 런북 — 일일 운영
 
 ## 자동 (서버 cron)
-- `10 8 * * 1-6` → `scripts/server_daily_batch.sh` (월~토 08:10 KST). 로그: `~/ai-trade-for-retirement/logs/batch_YYYYMMDD.log`
+- `10 8 * * 1-6` → `scripts/server_daily_batch.sh` (월~토 08:10 KST, **아침=전일 EOD로 유니버스 재선정+추천**). 로그: `~/ai-trade-for-retirement/logs/batch_YYYYMMDD.log`
+- `0 17 * * 1-5` → `scripts/server_intraday_batch.sh` (월~금 17:00 KST, **오후=당일 종가 same-day 갱신**). 로그: `logs/intraday_YYYYMMDD.log`
+  - 공식 KRX OpenAPI는 당일치를 **익일 08시**에야 공개 → 오후엔 유니버스 재선정 불가. 하지만 **pykrx는 장후 당일 종가 제공** → 시뮬·백테·페이지 가격을 '오늘 종가'로 갱신.
+  - 단계: 1) `build_intraday`(pykrx 당일종가 기존 유니버스에 append) → 2) `build_webapp --asof=<daily_ohlcv 최신일>`(★`--asof` 필수: 미지정 시 기본=공식 최신=전일이라 same-day 무효★) → 3) `run_sims`(시뮬 당일 전진) → 4) `build_bt_archive`(백테 당일 추가) → 5) `build_flow`(당일 수급).
+  - 추천(주봉 20주선 눌림)은 완성 주봉 기반이라 장중 안 바뀜 → 아침 추천 유지, 오후엔 가격·시뮬만 same-day.
 - 단계(set -uo pipefail — 한 단계 실패해도 다음 진행, rc는 마지막값):
   1) update_data(상위 유니버스 증분·pykrx 수정주가 + 인덱스 공식API)
   2) build_broad(전종목 공식API)

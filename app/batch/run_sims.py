@@ -54,7 +54,10 @@ def main():
             m2 = min(LEV_CAP, target * mult)
             slots = compute_target_slots(m2, maxpos, baseslot); weight = compute_weight_per_stock(m2, slots)
             usig = dict(sig); usig["exposure"] = {"slots": int(slots), "weight": weight, "max_lev": round(m2, 4)}
-            ns, r = engine.execute_day(state, asof, usig)   # cb_limit는 state에서 적용
+            if float(state.get("core_weight", 0) or 0) > 0:     # 코어-위성 모드: 코어=지수 로테이션, 위성=active
+                ns, r = engine.execute_day_coresat(state, asof, usig)
+            else:
+                ns, r = engine.execute_day(state, asof, usig)   # 순수 active. cb_limit는 state에서 적용
             db.save_step(s["sub"], ns, r)
             done += 1
         except Exception as e:
