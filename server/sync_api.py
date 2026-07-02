@@ -172,6 +172,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._toss_audit()
                 if path == "/api/toss/insight":
                     return self._toss_insight()
+                if path == "/api/toss/rotation":
+                    return self._toss_rotation()
             except Exception as e:
                 try:
                     return self._send(500, {"error": "서버 오류(" + type(e).__name__ + ")"})
@@ -507,6 +509,169 @@ class Handler(BaseHTTPRequestHandler):
             "recent": orders[:15],
         })
 
+    # ── 코어 재배치(글로벌 로테이션) — 검증: KR2+나스닥100 CAGR 26%/MDD −25% (backtest/global_rotation_backtest.py) ──
+    def _toss_build_rebalance(self, T, api_key, secret, seq, cfg):
+        """재배치 계획: 코어전환/20주선이탈 매도 + 비주도(코어자금) 매도 + 타깃 ETF 매수(청크≤단건한도)."""
+        from app.data import global_rotation as GR
+        from server import toss_analysis as TA
+        rot = GR.signal(api_key, secret)
+        target = rot.get("target")
+        items = (((T.get_holdings(api_key, secret, seq) or {}).get("result") or {}).get("items")) or []
+        bp = float((T.get_buying_power(api_key, secret, seq)["result"] or {}).get("cashBuyingPower") or 0)
+        krx = [it for it in items if str(it.get("symbol", "")).isdigit() and len(str(it.get("symbol"))) == 6]
+        sigs = TA.signals([str(it["symbol"]) for it in krx])
+        SELL_COST = 0.0035                             # 매도 비용 보수 근사(수수료+세금)
+        total = bp + sum(float(it.get("lastPrice") or 0) * float(it.get("quantity") or 0) for it in krx)
+        core_w = float(cfg.get("core_weight", 0.7))
+        core_amt = core_w * total
+        cur_core = sum(float(it.get("lastPrice") or 0) * float(it.get("quantity") or 0)
+                       for it in krx if str(it["symbol"]) == target)
+        sells, sold_syms = [], set()
+
+        def _add_sell(it, reason):
+            sym = str(it["symbol"]); qty = int(float(it.get("quantity") or 0)); px = float(it.get("lastPrice") or 0)
+            if qty >= 1 and px > 0 and sym not in sold_syms:
+                sells.append({"symbol": sym, "name": it.get("name", sym), "quantity": qty,
+                              "est_price": int(px), "est_amount": round(qty * px), "reason": reason})
+                sold_syms.add(sym)
+
+        for it in krx:                                  # ① 규칙 매도: 코어 전환 / 20주선 이탈
+            sym = str(it["symbol"]); s = sigs.get(sym) or {}
+            if sym in GR.ASSETS and sym != target:
+                _add_sell(it, "코어 전환")
+            elif s.get("wma20") and s.get("close") and s["close"] < s["wma20"]:
+                _add_sell(it, "20주선 이탈(청산 규칙)")
+        proj_cash = bp + sum(x["est_amount"] * (1 - SELL_COST) for x in sells)
+        need = core_amt - cur_core - proj_cash
+        if target and need > 0:                          # ② 비주도(리더 아님) 약한 순으로 코어 자금 조달
+            nonlead = [it for it in krx if str(it["symbol"]) not in sold_syms and str(it["symbol"]) != target
+                       and not (sigs.get(str(it["symbol"])) or {}).get("leader")]
+            nonlead.sort(key=lambda it: (sigs.get(str(it["symbol"])) or {}).get("high52") or 0)
+            for it in nonlead:
+                if proj_cash >= core_amt - cur_core:
+                    break
+                _add_sell(it, "비주도(코어 자금)")
+                proj_cash = bp + sum(x["est_amount"] * (1 - SELL_COST) for x in sells)
+        buy = None
+        if target:
+            tgt_px = float((rot["assets"].get(target) or {}).get("close") or 0)
+            buy_amt = max(0.0, min(core_amt - cur_core, proj_cash))
+            if tgt_px > 0 and buy_amt > tgt_px:
+                qty = int(buy_amt // tgt_px)
+                max_n = float(cfg.get("max_notional_krw", 3_000_000))
+                chunk = max(1, int(max_n // tgt_px))     # 청크 수량 ≤ 단건한도
+                chunks = [chunk] * (qty // chunk) + ([qty % chunk] if qty % chunk else [])
+                buy = {"symbol": target, "name": rot["target_name"], "quantity": qty,
+                       "est_price": int(tgt_px), "est_amount": round(qty * tgt_px), "n_chunks": len(chunks), "chunks": chunks}
+        keep = [{"symbol": str(it["symbol"]), "name": it.get("name"), "leader": bool((sigs.get(str(it["symbol"])) or {}).get("leader"))}
+                for it in krx if str(it["symbol"]) not in sold_syms and str(it["symbol"]) != target]
+        return {"rotation": rot, "total": round(total), "cash": round(bp), "core_weight": core_w,
+                "core_target_amt": round(core_amt), "cur_core": round(cur_core),
+                "sells": sells, "buy": buy, "keep": keep}
+
+    def _toss_rotation(self):
+        """GET — 로테이션 신호 + 재배치 계획 미리보기(주문 없음)."""
+        info = self._auth()
+        if not info:
+            return self._send(401, {"error": "unauthorized"})
+        from app.data import toss_api as T
+        from server import toss_keystore as KS, toss_config as CFG
+        creds = KS.get(info["sub"])
+        if not creds:
+            return self._send(400, {"error": "미연동"})
+        api_key, secret, seq = creds
+        try:
+            return self._send(200, self._toss_build_rebalance(T, api_key, secret, seq, CFG.get_config(info["sub"])))
+        except T.TossError as e:
+            return self._send(502, {"error": "계획 산출 실패", "status": e.status})
+
+    def _toss_rebalance(self):
+        """POST {confirm:true} — 계획 재산출 후 집행: 매도(마켓어블 지정가)→체결확인→매수여력 재조회→타깃 매수(청크)."""
+        info = self._auth()
+        if not info:
+            return self._send(401, {"error": "unauthorized"})
+        data = self._body() or {}
+        if data.get("confirm") is not True:
+            return self._send(400, {"error": "재배치 확인(confirm=true) 필요"})
+        import datetime as _dt, time as _time
+        from app.data import toss_api as T
+        from server import toss_keystore as KS, toss_config as CFG
+        sub = info["sub"]
+        creds = KS.get(sub)
+        if not creds:
+            return self._send(400, {"error": "미연동"})
+        api_key, secret, seq = creds
+        cfg = CFG.get_config(sub)
+        if cfg.get("kill_switch"):
+            return self._send(403, {"error": "킬스위치 ON — 차단"})
+        try:
+            plan = self._toss_build_rebalance(T, api_key, secret, seq, cfg)
+        except T.TossError as e:
+            return self._send(502, {"error": "계획 산출 실패", "status": e.status})
+        ts = _dt.datetime.now().isoformat(); today = ts[:10]
+        results = []
+
+        def _wait_fill(oid, secs=10):
+            for _ in range(secs):
+                _time.sleep(1)
+                od = (T.get_order(api_key, secret, seq, oid).get("result") or {})
+                if od.get("status") in ("FILLED", "CANCELED", "REJECTED", "EXPIRED"):
+                    return od
+            return od
+
+        for s in plan["sells"]:                          # ① 매도 — 최우선 매수호가 지정가(마켓어블)
+            try:
+                ob = (T.get_orderbook(api_key, secret, s["symbol"]).get("result") or {})
+                bids = ob.get("bids") or []
+                px = int(float(bids[0]["price"])) if bids else None
+                if not px:
+                    results.append({**s, "side": "SELL", "result": "skip", "detail": "호가 없음(장마감?)"}); continue
+                CFG.bump_daily(sub, today)
+                r = T.create_order(api_key, secret, seq, s["symbol"], "SELL", "LIMIT",
+                                   quantity=s["quantity"], price=px, client_order_id=f"rebal_{today}_S_{s['symbol']}")
+                oid = (r.get("result") or {}).get("orderId")
+                od = _wait_fill(oid)
+                st = od.get("status")
+                CFG.log_order(sub, {"ts": ts, "symbol": s["symbol"], "side": "SELL", "quantity": s["quantity"],
+                                    "price": px, "result": "placed" if st == "FILLED" else str(st), "order_id": oid,
+                                    "src": "rebalance", "detail": s["reason"]})
+                results.append({**s, "side": "SELL", "result": st, "order_id": oid})
+                _time.sleep(0.4)
+            except T.TossError as e:
+                CFG.log_order(sub, {"ts": ts, "symbol": s["symbol"], "side": "SELL", "result": "error",
+                                    "detail": f"토스 거부(HTTP {e.status})", "src": "rebalance"})
+                results.append({**s, "side": "SELL", "result": "error", "status": e.status})
+        buy = plan.get("buy")
+        if buy:                                          # ② 매수 — 실제 매수여력 재조회 후 최우선 매도호가 지정가 청크
+            try:
+                bp2 = float((T.get_buying_power(api_key, secret, seq)["result"] or {}).get("cashBuyingPower") or 0)
+                ob = (T.get_orderbook(api_key, secret, buy["symbol"]).get("result") or {})
+                asks = ob.get("asks") or []
+                ask = int(float(asks[0]["price"])) if asks else None
+                if not ask:
+                    results.append({**buy, "side": "BUY", "result": "skip", "detail": "호가 없음(장마감?)"})
+                else:
+                    qty_total = min(buy["quantity"], int((bp2 * 0.997) // ask))
+                    max_n = float(cfg.get("max_notional_krw", 3_000_000))
+                    chunk = max(1, int(max_n // ask))
+                    done = 0
+                    while done < qty_total:
+                        q = min(chunk, qty_total - done)
+                        CFG.bump_daily(sub, today)
+                        r = T.create_order(api_key, secret, seq, buy["symbol"], "BUY", "LIMIT",
+                                           quantity=q, price=ask, client_order_id=f"rebal_{today}_B_{buy['symbol']}_{done}")
+                        oid = (r.get("result") or {}).get("orderId")
+                        od = _wait_fill(oid)
+                        CFG.log_order(sub, {"ts": ts, "symbol": buy["symbol"], "side": "BUY", "quantity": q,
+                                            "price": ask, "result": str(od.get("status")), "order_id": oid, "src": "rebalance"})
+                        results.append({"symbol": buy["symbol"], "name": buy["name"], "side": "BUY",
+                                        "quantity": q, "price": ask, "result": od.get("status"), "order_id": oid})
+                        done += q
+                        _time.sleep(0.4)
+            except T.TossError as e:
+                results.append({"symbol": buy["symbol"], "side": "BUY", "result": "error", "status": e.status})
+        return self._send(200, {"plan": plan, "results": results})
+
     def _toss_config_get(self):
         info = self._auth()
         if not info:
@@ -783,6 +948,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._toss_order()
                 if path == "/api/toss/cancel":
                     return self._toss_cancel()
+                if path == "/api/toss/rebalance":
+                    return self._toss_rebalance()
                 if path == "/api/toss/config":
                     return self._toss_config_set()
                 return self._send(404, {"error": "not found"})

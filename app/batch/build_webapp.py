@@ -133,6 +133,21 @@ def main():
         market_alloc["lead"] = _lead
         market_alloc["guide"] = (f"{_lead} 우위 — 추세 위 지수에 노출. "
                                  + ("두 지수 모두 추세 위." if len(_on) == 2 else f"{_lead}만 추세 위."))
+    # 글로벌 로테이션(코어 업그레이드) — KODEX200/코스닥150/나스닥100 중 추세 위 모멘텀 1위.
+    # 검증(global_rotation_backtest 2016~26): CAGR +26%·MDD −25% — KR-only(+17.9%/−43%) 압도. 실패 시 KR-only 폴백.
+    try:
+        _envp = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env")
+        for _ln in open(_envp, encoding="utf-8"):
+            _ln = _ln.strip()
+            if "=" in _ln and not _ln.startswith("#"):
+                _k, _v = _ln.split("=", 1)
+                os.environ.setdefault(_k.strip(), _v.strip())
+        from app.data import global_rotation as _GR
+        _rot = _GR.signal(os.environ["TOSS_API_KEY"], os.environ["TOSS_SECRET_KEY"])
+        market_alloc["global"] = _rot
+        print(f"글로벌 로테이션 코어: {_rot.get('target_name') or '현금'}", file=sys.stderr)
+    except Exception as _e:
+        print(f"글로벌 로테이션 신호 실패(KR-only 폴백): {type(_e).__name__}", file=sys.stderr)
 
     uni = daily_asof[(daily_asof["close"] >= cfg["universe"]["min_close"]) &
                      (daily_asof["listing_days"] >= cfg["universe"]["min_listing_days"])].copy()

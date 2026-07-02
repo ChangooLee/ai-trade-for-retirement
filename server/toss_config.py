@@ -13,6 +13,7 @@ _lock = threading.Lock()
 DEFAULTS = {
     "kill_switch": False,              # True면 전 주문 차단
     "max_notional_krw": 3_000_000,     # 단건 주문 명목가(수량×가격) 상한(원). 보수적 기본.
+    "core_weight": 0.7,                # 코어(글로벌 로테이션 ETF) 목표 비중 — 재배치 계획 기준
     "program_enabled": False,          # 3단계 프로그램매매 on/off
     "program_dry_run": True,           # 기본 드라이런(실주문 안 냄, 로그만)
     "program_max_positions": 5,        # 동시 보유 종목 수 상한
