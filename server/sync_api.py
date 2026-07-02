@@ -12,6 +12,26 @@ from __future__ import annotations
 import json, os, sys, time, threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+
+def _load_env_file():
+    """서비스가 systemd EnvironmentFile 없이도 .env(gitignored)의 키를 로드(기존 환경 우선)."""
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env")
+    try:
+        with open(p, encoding="utf-8") as f:
+            for line in f:
+                s = line.strip()
+                if not s or s.startswith("#") or "=" not in s:
+                    continue
+                k, v = s.split("=", 1)
+                k = k.strip()
+                if k and k not in os.environ:
+                    os.environ[k] = v.strip()
+    except FileNotFoundError:
+        pass
+
+
+_load_env_file()
+
 # SSE 동시 스트림 상한(ThreadingHTTPServer는 스트림당 스레드 1개 점유) + 활성 카운터
 MAX_STREAMS = 64
 ACTIVE_STREAMS = 0
@@ -138,6 +158,25 @@ class Handler(BaseHTTPRequestHandler):
             return self._stream()
         if path == "/api/dart":
             return self._dart()
+        if path.startswith("/api/toss/"):
+            try:
+                if path == "/api/toss/status":
+                    return self._toss_status()
+                if path == "/api/toss/account":
+                    return self._toss_account()
+                if path == "/api/toss/market":
+                    return self._toss_market()
+                if path == "/api/toss/config":
+                    return self._toss_config_get()
+                if path == "/api/toss/audit":
+                    return self._toss_audit()
+                if path == "/api/toss/insight":
+                    return self._toss_insight()
+            except Exception as e:
+                try:
+                    return self._send(500, {"error": "서버 오류(" + type(e).__name__ + ")"})
+                except Exception:
+                    return
         return self._send(404, {"error": "not found"})
 
     def _dart(self):
@@ -297,8 +336,461 @@ class Handler(BaseHTTPRequestHandler):
         os.replace(tmp, path_for(sub))   # 원자적 교체
         self._send(200, {"ok": True})
 
+    # ── 토스증권 연동 (시장데이터=소유자키 / 계좌·주문=사용자 본인키) ──
+    def _toss_owner(self):
+        return os.environ.get("TOSS_API_KEY"), os.environ.get("TOSS_SECRET_KEY")
+
+    def _toss_link(self):
+        info = self._auth()
+        if not info:
+            return self._send(401, {"error": "unauthorized"})
+        data = self._body()
+        if not data or not data.get("api_key") or not data.get("secret"):
+            return self._send(400, {"error": "api_key/secret 필요"})
+        try:
+            from app.data import toss_api as T
+            from server import toss_keystore as KS
+        except Exception as e:
+            return self._send(500, {"error": "toss module load: " + str(e)[:120]})
+        api_key, secret = str(data["api_key"]).strip(), str(data["secret"]).strip()
+        try:                                   # 키 유효성 = 계좌 조회로 검증
+            acc = T.get_accounts(api_key, secret)
+        except T.TossError as e:
+            return self._send(400, {"error": "키 검증 실패(토스 인증 오류)", "status": e.status})
+        except Exception as e:
+            return self._send(502, {"error": "토스 연결 실패: " + str(e)[:100]})
+        res = (acc or {}).get("result") or []
+        if not res:
+            return self._send(400, {"error": "계좌 없음 — 키/계좌 확인"})
+        a0 = res[0]
+        KS.save(info["sub"], api_key, secret, a0.get("accountSeq"), a0.get("accountNo"))
+        return self._send(200, {"linked": True, "account_no_masked": "***" + str(a0.get("accountNo", ""))[-4:],
+                                "account_type": a0.get("accountType"), "n_accounts": len(res)})
+
+    def _toss_unlink(self):
+        info = self._auth()
+        if not info:
+            return self._send(401, {"error": "unauthorized"})
+        from server import toss_keystore as KS
+        KS.delete(info["sub"])
+        return self._send(200, {"linked": False})
+
+    def _toss_status(self):
+        info = self._auth()
+        if not info:
+            return self._send(401, {"error": "unauthorized"})
+        from server import toss_keystore as KS
+        return self._send(200, KS.status(info["sub"]))
+
+    def _toss_account(self):
+        info = self._auth()
+        if not info:
+            return self._send(401, {"error": "unauthorized"})
+        from app.data import toss_api as T
+        from server import toss_keystore as KS
+        creds = KS.get(info["sub"])
+        if not creds:
+            return self._send(400, {"error": "미연동 — 토스 키를 먼저 연동하세요", "linked": False})
+        api_key, secret, seq = creds
+        out = {"linked": True}
+        try:
+            out["holdings"] = T.get_holdings(api_key, secret, seq)   # 핵심 — 실패 시만 에러
+        except T.TossError as e:
+            return self._send(502, {"error": "보유 조회 실패(잠시 후 재시도)", "status": e.status})
+        for key, fn in (("open_orders", lambda: T.get_orders(api_key, secret, seq, status="OPEN")),
+                        ("closed_orders", lambda: T.get_orders(api_key, secret, seq, status="CLOSED", limit=20)),
+                        ("buying_power", lambda: T.get_buying_power(api_key, secret, seq)),
+                        ("market_kr", lambda: T.get_market_calendar(api_key, secret, "KR"))):
+            try:
+                out[key] = fn()      # 개별 실패는 생략(일부 조회 실패가 전체를 막지 않게)
+            except Exception:
+                pass
+        try:            # 보유종목 우리전략 신호(전 KRX, 유니버스 밖 포함)
+            items = ((out.get("holdings") or {}).get("result") or {}).get("items") or []
+            syms = [str(it.get("symbol")) for it in items if it.get("symbol")]
+            if syms:
+                from server import toss_analysis as TA
+                out["signals"] = TA.signals(syms)
+        except Exception:
+            pass
+        return self._send(200, out)
+
+    def _toss_market(self):
+        info = self._auth()
+        if not info:
+            return self._send(401, {"error": "unauthorized"})
+        import urllib.parse
+        q = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+        g = lambda k, d=None: (q.get(k) or [d])[0]
+        ak, sk = self._toss_owner()
+        if not ak or not sk:
+            return self._send(503, {"error": "시장데이터 키 미설정"})
+        from app.data import toss_api as T
+        kind = g("kind", "prices")
+        try:
+            if kind == "info":       # 통합 시장정보: 환율·KR/US 장운영·금/국내외 시세
+                out = {}
+                for key, fn in (("fx_usd", lambda: T.get_exchange_rate(ak, sk, "USD", "KRW")),
+                                ("fx_jpy", lambda: T.get_exchange_rate(ak, sk, "JPY", "KRW")),
+                                ("market_kr", lambda: T.get_market_calendar(ak, sk, "KR")),
+                                ("market_us", lambda: T.get_market_calendar(ak, sk, "US")),
+                                ("prices", lambda: T.get_prices(ak, sk, "132030,069500,229200,005930,000660,AAPL,NVDA,TSLA,SPY,QQQ"))):
+                    try:
+                        out[key] = fn()
+                    except Exception:
+                        pass
+                return self._send(200, out)
+            if kind == "prices" and g("symbols"):
+                return self._send(200, T.get_prices(ak, sk, g("symbols")))
+            if kind == "candles" and g("symbol"):
+                return self._send(200, T.get_candles(ak, sk, g("symbol"), interval=g("interval", "1d"), count=g("count")))
+            if kind == "stocks" and g("symbols"):
+                return self._send(200, T.get_stocks(ak, sk, g("symbols")))
+            if kind == "orderbook" and g("symbol"):
+                return self._send(200, T.get_orderbook(ak, sk, g("symbol")))
+            return self._send(400, {"error": "kind/symbol(s) 확인 (kind=prices|candles|stocks|orderbook)"})
+        except T.TossError as e:
+            return self._send(502, {"error": "시장데이터 조회 실패", "status": e.status})
+
+    def _toss_insight(self):
+        """매매 인사이트 — 최근 체결(FIFO 매칭) 실현손익·승률·수수료/세금·매수매도·종목별."""
+        info = self._auth()
+        if not info:
+            return self._send(401, {"error": "unauthorized"})
+        from app.data import toss_api as T
+        from server import toss_keystore as KS
+        creds = KS.get(info["sub"])
+        if not creds:
+            return self._send(400, {"error": "미연동"})
+        api_key, secret, seq = creds
+        try:
+            orders = T.get_orders_paged(api_key, secret, seq, "CLOSED", pages=3, per=50)
+        except T.TossError as e:
+            return self._send(502, {"error": "주문 이력 조회 실패", "status": e.status})
+        from collections import defaultdict, deque
+        filled = [o for o in orders if o.get("status") == "FILLED" and o.get("execution")]
+        filled.sort(key=lambda o: (o.get("execution") or {}).get("filledAt") or o.get("orderedAt") or "")
+        n_buy = n_sell = 0
+        buy_amt = sell_amt = fee = tax = 0.0
+        q = defaultdict(deque)
+        realized = defaultdict(float); rt = defaultdict(int); wins = defaultdict(int)
+        for o in filled:
+            ex = o.get("execution") or {}
+            qty = float(ex.get("filledQuantity") or 0); px = float(ex.get("averageFilledPrice") or 0)
+            fee += float(ex.get("commission") or 0); tax += float(ex.get("tax") or 0)
+            amt = float(ex.get("filledAmount") or 0); sym = o.get("symbol")
+            if o.get("side") == "BUY":
+                n_buy += 1; buy_amt += amt; q[sym].append([qty, px])
+            elif o.get("side") == "SELL":
+                n_sell += 1; sell_amt += amt
+                rem, pnl, matched = qty, 0.0, 0.0
+                while rem > 1e-9 and q[sym]:
+                    lot = q[sym][0]; m = min(rem, lot[0])
+                    pnl += (px - lot[1]) * m; matched += m; lot[0] -= m; rem -= m
+                    if lot[0] <= 1e-9:
+                        q[sym].popleft()
+                if matched > 0:
+                    realized[sym] += pnl; rt[sym] += 1
+                    if pnl > 0:
+                        wins[sym] += 1
+        total_rt = sum(rt.values()); total_wins = sum(wins.values())
+        by = sorted(({"symbol": s, "realized": round(realized[s]), "trips": rt[s]} for s in realized),
+                    key=lambda x: x["realized"])
+        return self._send(200, {
+            "summary": {"n_filled": len(filled), "n_buy": n_buy, "n_sell": n_sell,
+                        "buy_amt": round(buy_amt), "sell_amt": round(sell_amt),
+                        "net_amt": round(buy_amt - sell_amt), "fee": round(fee), "tax": round(tax),
+                        "realized": round(sum(realized.values())), "round_trips": total_rt,
+                        "win_rate": (total_wins / total_rt) if total_rt else 0.0,
+                        "has_more": bool(orders and len(orders) >= 150)},
+            "by_symbol": (by[:5] + by[-5:]) if len(by) > 10 else by,
+            "recent": orders[:15],
+        })
+
+    def _toss_config_get(self):
+        info = self._auth()
+        if not info:
+            return self._send(401, {"error": "unauthorized"})
+        from server import toss_config as CFG
+        return self._send(200, CFG.get_config(info["sub"]))
+
+    def _toss_audit(self):
+        info = self._auth()
+        if not info:
+            return self._send(401, {"error": "unauthorized"})
+        from server import toss_config as CFG
+        return self._send(200, {"audit": CFG.get_audit(info["sub"], 50)})
+
+    def _toss_config_set(self):
+        info = self._auth()
+        if not info:
+            return self._send(401, {"error": "unauthorized"})
+        data = self._body() or {}
+        import datetime as _dt
+        from server import toss_config as CFG
+        sub = info["sub"]
+        cur = CFG.get_config(sub)
+        upd, risk_up = {}, False
+        if "kill_switch" in data:
+            v = bool(data["kill_switch"]); upd["kill_switch"] = v
+            if cur.get("kill_switch") and not v:        # 킬스위치 해제 = 위험 증가
+                risk_up = True
+        for k, lo, hi in (("max_notional_krw", 0, 100_000_000),        # 상한 1억으로 하향(실계좌 규모)
+                          ("program_max_notional_krw", 0, 100_000_000),
+                          ("program_max_positions", 0, 50), ("program_daily_order_cap", 0, 200)):
+            if k in data:
+                try:
+                    v = max(lo, min(hi, float(data[k]) if "." in str(data[k]) else int(data[k])))
+                except Exception:
+                    continue
+                upd[k] = v
+                if v > float(cur.get(k, 0)):            # 한도 상향 = 위험 증가
+                    risk_up = True
+        for k in ("program_enabled", "program_dry_run"):
+            if k in data:
+                v = bool(data[k]); upd[k] = v
+                if k == "program_enabled" and v and not cur.get(k):
+                    risk_up = True
+                if k == "program_dry_run" and (not v) and cur.get(k):   # 드라이런 해제 = 실주문 활성
+                    risk_up = True
+        if risk_up and data.get("confirm") is not True:
+            return self._send(400, {"error": "위험 증가 설정(킬스위치 해제·한도 상향·프로그램/실주문 활성)은 confirm=true 필요", "need_confirm": True})
+        newc = CFG.set_config(sub, **upd)
+        CFG.log_order(sub, {"ts": _dt.datetime.now().isoformat(), "symbol": "-", "side": "", "result": "config",
+                            "detail": "변경 " + ",".join(sorted(upd.keys())), "src": "config"})
+        return self._send(200, newc)
+
+    def _toss_order(self):
+        info = self._auth()
+        if not info:
+            return self._send(401, {"error": "unauthorized"})
+        data = self._body()
+        if not data:
+            return self._send(400, {"error": "bad json"})
+        import datetime as _dt
+        from app.data import toss_api as T
+        from server import toss_keystore as KS, toss_config as CFG
+        sub = info["sub"]
+        creds = KS.get(sub)
+        if not creds:
+            return self._send(400, {"error": "미연동 — 토스 키를 먼저 연동하세요"})
+        api_key, secret, seq = creds
+        cfg = CFG.get_config(sub)
+        symbol = str(data.get("symbol", "")).strip()
+        side = str(data.get("side", "")).upper()
+        otype = str(data.get("order_type", "LIMIT")).upper()
+        amt = data.get("order_amount")
+        # 엄격 입력검증(fail-closed) — 예외를 삼켜 통과시키지 않음
+        if data.get("confirm") is not True:
+            return self._send(400, {"error": "주문 확인(confirm=true) 필요"})
+        if not symbol or side not in ("BUY", "SELL") or otype not in ("LIMIT", "MARKET"):
+            return self._send(400, {"error": "symbol/side(BUY|SELL)/order_type(LIMIT|MARKET) 확인"})
+        qty = price = amtf = None
+        if amt is not None:
+            try:
+                amtf = float(amt)
+            except (TypeError, ValueError):
+                return self._send(400, {"error": "주문금액(order_amount)이 올바르지 않습니다"})
+            if amtf <= 0:
+                return self._send(400, {"error": "주문금액은 양수여야 합니다"})
+        else:
+            try:
+                qty = int(data.get("quantity"))
+            except (TypeError, ValueError):
+                return self._send(400, {"error": "수량은 양의 정수여야 합니다"})
+            if qty <= 0:
+                return self._send(400, {"error": "수량은 양수여야 합니다"})
+            if otype == "LIMIT":
+                try:
+                    price = float(data.get("price"))
+                except (TypeError, ValueError):
+                    return self._send(400, {"error": "지정가(price)를 입력하세요"})
+                if price <= 0:
+                    return self._send(400, {"error": "지정가는 양수여야 합니다"})
+        ts = _dt.datetime.now().isoformat()
+        today = ts[:10]
+        base = {"ts": ts, "symbol": symbol, "side": side, "order_type": otype, "quantity": qty, "price": price, "src": "manual"}
+        if cfg.get("kill_switch"):
+            CFG.log_order(sub, {**base, "result": "blocked", "detail": "kill_switch ON"})
+            return self._send(403, {"error": "킬스위치 ON — 모든 주문 차단(설정에서 해제)"})
+        if CFG.daily_order_count(sub, today) >= int(cfg.get("program_daily_order_cap", 20)):
+            CFG.log_order(sub, {**base, "result": "blocked", "detail": "일일 주문 캡"})
+            return self._send(429, {"error": "일일 주문 캡 도달"})
+        # 명목가 한도(KRW) — fail-closed: 계산 성공 시에만 통과, 못 구하면 거부. USD는 보수적 환산.
+        FX = 1500.0
+        notional_krw = None
+        try:
+            pr = T.get_prices(api_key, secret, symbol)["result"][0]
+            ccy = pr.get("currency", "KRW"); cur_px = float(pr["lastPrice"])
+            mult = 1.0 if ccy == "KRW" else FX
+            if amtf is not None:
+                notional_krw = amtf * (1.0 if ccy == "KRW" else FX)
+            elif otype == "LIMIT":
+                notional_krw = qty * price * mult
+            else:
+                notional_krw = qty * cur_px * mult
+        except Exception:
+            notional_krw = None
+        if notional_krw is None:
+            CFG.log_order(sub, {**base, "result": "blocked", "detail": "한도검증 불가(시세)"})
+            return self._send(403, {"error": "한도 검증 불가(시세 조회 실패) — 안전상 주문 거부"})
+        if notional_krw > float(cfg.get("max_notional_krw", 0)):
+            CFG.log_order(sub, {**base, "result": "blocked", "detail": f"명목가 {int(notional_krw)} > 한도 {int(cfg['max_notional_krw'])}"})
+            return self._send(403, {"error": f"단건 한도 초과: 약 {int(notional_krw):,}원 > {int(cfg['max_notional_krw']):,}원 (설정에서 조정)"})
+        CFG.bump_daily(sub, today)
+        try:
+            resp = T.create_order(api_key, secret, seq, symbol, side, otype,
+                                  quantity=qty, price=price, order_amount=amtf,
+                                  client_order_id=data.get("client_order_id"))
+            oid = (resp.get("result") or {}).get("orderId")
+            CFG.log_order(sub, {**base, "result": "placed", "order_id": oid, "notional": int(notional_krw)})
+            return self._send(200, {"ok": True, "order": resp})
+        except T.TossError as e:                                   # e.body 미반환·미저장(키 유출 방지)
+            CFG.log_order(sub, {**base, "result": "error", "detail": f"토스 거부(HTTP {e.status})"})
+            return self._send(502, {"error": "주문 실패", "status": e.status})
+
+    def _toss_cancel(self):
+        info = self._auth()
+        if not info:
+            return self._send(401, {"error": "unauthorized"})
+        data = self._body() or {}
+        oid = str(data.get("order_id", "")).strip()
+        if not oid:
+            return self._send(400, {"error": "order_id 필요"})
+        from app.data import toss_api as T
+        from server import toss_keystore as KS
+        creds = KS.get(info["sub"])
+        if not creds:
+            return self._send(400, {"error": "미연동"})
+        api_key, secret, seq = creds
+        try:
+            return self._send(200, {"ok": True, "result": T.cancel_order(api_key, secret, seq, oid)})
+        except T.TossError as e:
+            return self._send(502, {"error": "취소 실패", "status": e.status})
+
+    def _toss_program_run(self):
+        """3단계 프로그램매매 1회 — 현 신호(daily_signals.buy_order) 미보유분을 한도 내 지정가 매수.
+        안전: program_enabled·kill_switch·일일캡·최대포지션·단건한도·드라이런 기본. 매수 전용(v1)."""
+        info = self._auth()
+        if not info:
+            return self._send(401, {"error": "unauthorized"})
+        data = self._body() or {}
+        import datetime as _dt, math as _math, threading as _th
+        from app.data import toss_api as T
+        from server import toss_keystore as KS, toss_config as CFG
+        sub = info["sub"]
+        gl = globals()
+        with gl.setdefault("_toss_prog_guard", _th.Lock()):
+            lk = gl.setdefault("_toss_prog_locks", {}).setdefault(sub, _th.Lock())
+        if not lk.acquire(blocking=False):          # 동시 실행 차단(중복 발주 방지)
+            return self._send(429, {"error": "프로그램 매매가 이미 실행 중입니다"})
+        try:
+            creds = KS.get(sub)
+            if not creds:
+                return self._send(400, {"error": "미연동"})
+            api_key, secret, seq = creds
+            cfg = CFG.get_config(sub)
+            if not cfg.get("program_enabled"):
+                return self._send(400, {"error": "프로그램매매 비활성 — 설정에서 켜세요"})
+            if cfg.get("kill_switch"):
+                return self._send(403, {"error": "킬스위치 ON — 차단"})
+            dry = bool(data.get("dry_run", cfg.get("program_dry_run", True)))
+            today = _dt.date.today().isoformat()
+            cap = int(cfg.get("program_daily_order_cap", 20))
+            if CFG.daily_order_count(sub, today) >= cap:
+                return self._send(429, {"error": "일일 주문 캡 도달"})
+            sigp = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "state", "daily_signals.json")
+            try:
+                sig = json.load(open(sigp, encoding="utf-8"))
+            except Exception:
+                return self._send(500, {"error": "신호 로드 실패"})
+            buy_syms = [b.get("ticker") for b in (sig.get("buy_order") or []) if b.get("ticker")]
+            try:                                    # 보유 + 미체결 매수(둘 다 포지션 점유로 간주)
+                items = ((T.get_holdings(api_key, secret, seq) or {}).get("result") or {}).get("items") or []
+                openo = (((T.get_orders(api_key, secret, seq, status="OPEN") or {}).get("result") or {}).get("orders")) or []
+            except T.TossError as e:
+                return self._send(502, {"error": "보유/주문 조회 실패", "status": e.status})
+            held = {str(it.get("symbol")) for it in items}
+            reserved = held | {str(o.get("symbol")) for o in openo}
+            cap_notional = float(cfg.get("program_max_notional_krw", 2_000_000))
+            max_pos = int(cfg.get("program_max_positions", 5))
+            room = max(0, max_pos - len(reserved))
+            plan, results = [], []
+            for tk in buy_syms:
+                if tk in reserved or len(plan) >= room:
+                    continue
+                try:
+                    prc = T.get_prices(api_key, secret, tk)["result"][0]
+                    px = float(prc["lastPrice"]); mult = 1.0 if prc.get("currency", "KRW") == "KRW" else 1500.0
+                except Exception:
+                    results.append({"symbol": tk, "result": "skip", "detail": "시세 조회 실패"}); continue
+                qty = int(_math.floor(cap_notional / (px * mult))) if px > 0 else 0
+                if qty < 1:
+                    results.append({"symbol": tk, "result": "skip", "detail": "1주 명목가 > 한도"}); continue
+                plan.append({"symbol": tk, "side": "BUY", "order_type": "LIMIT", "quantity": qty, "price": int(px)})
+            # 매도(청산) — 보유종목 중 우리 청산규칙(20주선 종가 이탈) 신호
+            try:
+                from server import toss_analysis as TA
+                sigs = TA.signals([str(it.get("symbol")) for it in items])
+            except Exception:
+                sigs = {}
+            for it in items:
+                sym = str(it.get("symbol")); sg = sigs.get(sym) or {}
+                wma, cl = sg.get("wma20"), sg.get("close")
+                try:
+                    qh = int(float(it.get("quantity") or 0))
+                except Exception:
+                    qh = 0
+                if qh >= 1 and wma and cl and cl < wma:      # 20주선 이탈 = 청산 신호
+                    plan.append({"symbol": sym, "side": "SELL", "order_type": "LIMIT",
+                                 "quantity": qh, "price": int(cl), "reason": "20주선 이탈"})
+            ts = _dt.datetime.now().isoformat()
+            for p in plan:
+                b = {"ts": ts, **p, "src": "program"}
+                if dry:
+                    CFG.log_order(sub, {**b, "result": "dry_run"})
+                    results.append({**p, "result": "dry_run"}); continue
+                if CFG.daily_order_count(sub, today) >= cap:
+                    results.append({**p, "result": "skip", "detail": "일일캡"}); break
+                CFG.bump_daily(sub, today)          # API 발주 전 카운트(경쟁조건·폭주 방지)
+                try:
+                    resp = T.create_order(api_key, secret, seq, p["symbol"], p["side"], p.get("order_type", "LIMIT"),
+                                          quantity=p["quantity"], price=p["price"],
+                                          client_order_id=f"prog_{today}_{p['side']}_{p['symbol']}")
+                    oid = (resp.get("result") or {}).get("orderId")
+                    CFG.log_order(sub, {**b, "result": "placed", "order_id": oid})
+                    results.append({**p, "result": "placed", "order_id": oid})
+                except T.TossError as e:            # 본문 미저장·미반환
+                    CFG.log_order(sub, {**b, "result": "error", "detail": f"토스 거부(HTTP {e.status})"})
+                    results.append({**p, "result": "error", "status": e.status})
+            return self._send(200, {"dry_run": dry, "signals": buy_syms, "held": sorted(held),
+                                    "open": sorted({str(o.get("symbol")) for o in openo}),
+                                    "max_positions": max_pos, "results": results})
+        finally:
+            lk.release()
+
     def do_POST(self):
         path = self._path()
+        if path.startswith("/api/toss/"):
+            try:
+                if path == "/api/toss/program/run":
+                    return self._toss_program_run()
+                if path == "/api/toss/link":
+                    return self._toss_link()
+                if path == "/api/toss/unlink":
+                    return self._toss_unlink()
+                if path == "/api/toss/order":
+                    return self._toss_order()
+                if path == "/api/toss/cancel":
+                    return self._toss_cancel()
+                if path == "/api/toss/config":
+                    return self._toss_config_set()
+                return self._send(404, {"error": "not found"})
+            except Exception as e:
+                try:
+                    return self._send(500, {"error": "서버 오류(" + type(e).__name__ + ")"})
+                except Exception:
+                    return
         if path not in ("/api/sim/start", "/api/sim/reset"):
             return self._send(404, {"error": "not found"})
         info = self._auth()
